@@ -1,0 +1,1 @@
+pyinstaller --name MyOps --windowed --onedir --icon="assets/icone.ico" --add-data "assets;assets" --add-data "config.ini;." --add-data "license.key;." main_app.py

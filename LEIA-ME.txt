@@ -1,0 +1,132 @@
+====================================================================== MyOps v1.0 - Ferramentas de Automação e Suporte LEIA-ME
+Obrigado por utilizar o MyOps! Este arquivo contém informações
+importantes sobre a instalação, configuração e uso da aplicação.
+
+ÍNDICE
+Descrição do Produto
+
+Requisitos de Sistema
+
+Instruções de Instalação e Licenciamento
+
+Primeiro Uso: Configuração das Conexões
+
+Solução de Problemas (Troubleshooting)
+
+Contato e Suporte
+
+DESCRIÇÃO DO PRODUTO
+
+O MyOps é uma suíte de ferramentas desenvolvida para agilizar e
+simplificar tarefas operacionais e de suporte em bancos de dados
+Oracle, com foco especial em ambientes Siebel. A aplicação oferece
+uma interface gráfica intuitiva para executar processos complexos,
+monitorar sessões e realizar consultas de forma segura e eficiente.
+
+REQUISITOS DE SISTEMA
+
+Sistema Operacional: Windows 10 ou Windows 11 (64-bit).
+
+Permissões:
+
+Direitos de administrador para instalar a aplicação.
+
+Permissão de escrita no diretório de instalação para a
+criação de arquivos de log e configuração.
+
+Oracle Instant Client:
+O MyOps já inclui o Oracle Instant Client necessário para a
+conexão com os bancos de dados. Nenhuma instalação adicional
+do Oracle Client é necessária por parte do usuário.
+
+INSTRUÇÕES DE INSTALAÇÃO E LICENCIAMENTO
+
+A instalação do MyOps é um processo de dois passos:
+
+PASSO 1: EXECUTAR O INSTALADOR
+
+Execute o arquivo MyOps_Instalador_v1.0.exe.
+
+Siga as instruções do assistente de instalação. Você pode
+manter as opções padrão.
+
+PASSO 2: ATIVAR A LICENÇA (OBRIGATÓRIO)
+
+Após a instalação, localize o arquivo license.key que foi
+fornecido a você separadamente.
+
+Copie o arquivo license.key.
+
+Cole o arquivo dentro da pasta onde o MyOps foi instalado.
+(Ex: C:\Arquivos de Programas (x86)\MyOps)
+
+ATENÇÃO: A aplicação NÃO FUNCIONARÁ sem o arquivo license.key
+na mesma pasta que o executável MyOps.exe.
+
+PRIMEIRO USO: CONFIGURAÇÃO DAS CONEXÕES
+
+Para que os módulos do MyOps funcionem, o primeiro passo após a
+instalação é configurar as conexões com os bancos de dados.
+
+Abra o MyOps pelo atalho no Menu Iniciar ou na Área de Trabalho.
+
+Na barra de menu, vá para "Configurações" -> "Gerenciador de Conexões...".
+
+Na janela que se abrir, clique em "Nova".
+
+Preencha os detalhes para cada banco de dados que você utiliza:
+
+Nome da Seção: Um nome único para a conexão (ex: database_siebel,
+database_pgu). É importante manter o prefixo "database_".
+
+Usuário: O usuário do banco de dados.
+
+Senha: A senha correspondente.
+
+DSN / URL: A string de conexão do Oracle (ex: host:porta/service_name).
+
+Use o botão "Testar Conexão" para validar os dados.
+
+Clique em "Salvar Alterações".
+
+Repita o processo para todas as bases necessárias. Os nomes das
+conexões que você criar aqui aparecerão nas listas de seleção
+dentro de cada módulo da aplicação.
+
+SOLUÇÃO DE PROBLEMAS (TROUBLESHOOTING)
+
+Se encontrar algum problema, verifique os pontos abaixo:
+
+ERRO: "Arquivo de licença 'license.key' não encontrado" ou "Licença inválida/expirada".
+
+SOLUÇÃO: Confirme que o arquivo license.key está na mesma
+pasta que o MyOps.exe. Verifique se o arquivo não foi corrompido
+ou se sua data de validade já passou. Para renovar, um novo
+arquivo license.key deve ser fornecido e substituído.
+
+ERRO ao conectar ao banco: "DPY-3015: password verifier type ... is not supported"
+
+CAUSA: Este erro indica que a aplicação não conseguiu usar o
+Oracle Instant Client (modo Thick) e tentou conectar em modo Thin,
+que não suporta a criptografia de senha do seu banco.
+
+SOLUÇÃO: O instalador foi projetado para evitar este erro. Se ele
+ocorrer, pode haver um problema com os arquivos do Instant Client
+incluídos. Por favor, reporte o problema.
+
+ERRO INESPERADO OU O PROGRAMA FECHA SOZINHO:
+
+SOLUÇÃO: O MyOps gera um arquivo de log chamado myops_debug.log
+na mesma pasta onde foi instalado. Este arquivo contém informações
+técnicas detalhadas sobre o erro. Ao reportar um problema, por
+favor, anexe ou copie o conteúdo deste arquivo. Isso é essencial
+para um diagnóstico rápido e preciso.
+
+CONTATO E SUPORTE
+
+Para reportar bugs, solicitar novas funcionalidades ou obter suporte,
+entre em contato através de:
+
+Email: (paulo.stracci@accenture.com)
+
+Desenvolvedor: (Paulo Stracci - AM Siebel)
