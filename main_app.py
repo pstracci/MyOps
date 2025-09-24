@@ -22,10 +22,8 @@ root_logger.addHandler(file_handler)
 root_logger.addHandler(console_handler)
 logging.info("Aplicação iniciada. Sistema de log configurado.")
 
-
 # --- BLOCO DE INICIALIZAÇÃO DO ORACLE CLIENT (NÃO-FATAL) ---
 try:
-    # O caminho base é sempre o diretório onde o executável ou o script está.
     if getattr(sys, 'frozen', False):
         base_path = os.path.dirname(sys.executable)
     else:
@@ -42,29 +40,25 @@ try:
 
     if client_path and os.path.isdir(client_path):
         logging.info(f"Tentando inicializar Oracle Client a partir do caminho configurado: {client_path}")
-        # Adiciona o caminho do client ao PATH do sistema para que o SQL*Loader o encontre
         os.environ['PATH'] = client_path + os.pathsep + os.environ.get('PATH', '')
         oracledb.init_oracle_client(lib_dir=client_path)
         logging.info(f"Oracle Client inicializado com sucesso na inicialização. Versao do cliente: {oracledb.clientversion()}")
     else:
-        # Apenas registra um aviso e continua. A falha real ocorrerá se um módulo tentar se conectar.
         logging.warning(
             f"O caminho para o Oracle Instant Client nao foi encontrado ou nao esta configurado. "
             f"Verifique a chave 'instant_client_path' na secao [general] do arquivo '{config_path}'. "
             f"A aplicacao continuara, mas funcionalidades de banco de dados falharao."
         )
-
 except Exception as e:
-    # Registra o erro mas não impede a aplicação de abrir.
     logging.error(f"AVISO: Nao foi possivel inicializar o Oracle Client durante a inicializacao. Erro: {e}", exc_info=True)
-# --- FIM DO BLOCO DE INICIALIZAÇÃO ---
-
 
 from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QMessageBox, QMdiArea, QMdiSubWindow
 from PyQt6.QtGui import QFont, QAction, QColor, QBrush, QPixmap, QPainter, QActionGroup, QIcon
 from PyQt6.QtCore import Qt, QPoint
 
 # --- Import dos módulos da aplicação ---
+from modules.gfa.gfa_ui import GfaHealthWidget
+from modules.bat452_scheduler.bat452_scheduler_ui import Bat452SchedulerWidget
 from modules.contestacao.contestacao_ui import ContestacaoViewerWidget
 from modules.bat509.bat509_ui import Bat509ToolWidget
 from modules.object_viewer.object_viewer_ui import ObjectViewerWidget
@@ -100,21 +94,16 @@ class MainApplicationWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("MyOps - Ferramentas de Automação e Suporte")
 
-        # --- LÓGICA CORRIGIDA E FINAL PARA ENCONTRAR ARQUIVOS DE ASSETS ---
         if getattr(sys, 'frozen', False):
-            # Modo executável ('frozen'): o caminho base é a pasta do .exe.
             base_path = os.path.dirname(sys.executable)
         else:
-            # Modo de desenvolvimento (.py): o caminho base é a pasta do script.
             base_path = os.path.dirname(os.path.abspath(__file__))
 
-        # --- INÍCIO DA CORREÇÃO: ADICIONANDO O ÍCONE DA JANELA ---
         icon_path = os.path.join(base_path, 'assets', 'icone.ico')
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
         else:
             logging.warning(f"Ícone da aplicação não encontrado em: {icon_path}")
-        # --- FIM DA CORREÇÃO ---
 
         image_path = os.path.join(base_path, 'assets', 'fundo.png')
         logging.info(f"Procurando imagem de fundo em: {image_path}")
@@ -131,11 +120,14 @@ class MainApplicationWindow(QMainWindow):
         self._create_menu_bar()
         self.load_and_apply_theme()
 
+    # --- MÉTODO _create_menu_bar TOTALMENTE ATUALIZADO ---
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
         open_menu = menu_bar.addMenu("Abrir")
 
+        # O `module_map` continua sendo nosso "registro" central de todos os módulos
         self.module_map = {
+            "Agendador de Processamento Massivo (BAT452)": (Bat452SchedulerWidget, "Agendador BAT452"),
             "Consultar Relacionamentos Siebel": (SiebelRelationWidget, "Consultar Relacionamentos Siebel"),
             "Carregador de Arquivos (SQL*Loader)": (SqlLoaderWidget, "Carregador de Arquivos"),
             "Ferramentas Base Espelho": (EspelhoToolWidget, "Ferramentas Base Espelho"),
@@ -146,12 +138,41 @@ class MainApplicationWindow(QMainWindow):
             "Monitor de 'Top SQL' (Agregado)": (TopSqlMonitorWidget, "Monitor de Top SQL em Tempo Real"),
             "Visualizador de Contestações": (ContestacaoViewerWidget, "Visualizador de Contestações"),
             "Visualizador de Objetos de Banco": (ObjectViewerWidget, "Visualizador de Objetos"),
+            "Monitor Health GFA": (GfaHealthWidget, "Monitor de Health Check - GFA"),
         }
-        for text in sorted(self.module_map.keys()):
-            action = QAction(text, self)
-            action.triggered.connect(self.open_module_window)
-            open_menu.addAction(action)
+        
+        # Nova estrutura para organizar os menus
+        menu_structure = {
+            "Ferramentas de Banco de Dados": [
+                "Carregador de Arquivos (SQL*Loader)",
+                "Ferramentas Base Espelho",
+                "Monitor de Sessões",
+                "Monitor de 'Top SQL' (Agregado)",
+                "Visualizador de Objetos de Banco"
+            ],
+            "BATS": [
+                "Agendador de Processamento Massivo (BAT452)",
+                "Forçar Extração de Clientes/Contratos BAT223",
+                "Forçar Extração de Ordem (BAT509)"
+            ],
+            "Sistemas Legados": [
+                "Consultar Relacionamentos Siebel",
+                "Ferramentas PGU",
+                "Monitor Health GFA",
+                "Visualizador de Contestações"
+            ]
+        }
 
+        # Cria os sub-menus e adiciona as ações em cada um
+        for category_name in sorted(menu_structure.keys()):
+            sub_menu = open_menu.addMenu(category_name)
+            for module_text in sorted(menu_structure[category_name]):
+                if module_text in self.module_map:
+                    action = QAction(module_text, self)
+                    action.triggered.connect(self.open_module_window)
+                    sub_menu.addAction(action)
+
+        # O restante dos menus continua igual
         window_menu = menu_bar.addMenu("Janelas")
         cascade_action = QAction("Cascata", self); cascade_action.triggered.connect(self.mdi_area.cascadeSubWindows); window_menu.addAction(cascade_action)
         tile_action = QAction("Lado a Lado", self); tile_action.triggered.connect(self.mdi_area.tileSubWindows); window_menu.addAction(tile_action)
@@ -180,46 +201,37 @@ class MainApplicationWindow(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
+    # NENHUMA ALTERAÇÃO NECESSÁRIA NOS MÉTODOS ABAIXO
     def apply_theme(self, theme_name, from_load=False):
         app = QApplication.instance()
         if theme_name == 'dark':
             app.setStyleSheet(themes.get_dark_theme_qss())
-        else: # 'light'
-            # --- INÍCIO DA CORREÇÃO: APLICANDO UM TEMA BASE PARA O MODO CLARO ---
-            # Em vez de limpar o estilo (""), aplicamos um estilo base para
-            # garantir que a fonte e outros elementos sejam consistentes.
-            # Se você tiver um arquivo de tema claro, pode chamá-lo aqui.
-            # Caso contrário, resetar a fonte globalmente já resolve a inconsistência.
+        else:
             app.setStyleSheet("QWidget { font-size: 9pt; }")
-            # --- FIM DA CORREÇÃO ---
-
-        if not from_load:
-            self.save_theme_preference(theme_name)
+        if not from_load: self.save_theme_preference(theme_name)
 
     def save_theme_preference(self, theme_name):
         try:
             self.config.read('config.ini')
-            if not self.config.has_section('general'):
-                self.config.add_section('general')
+            if not self.config.has_section('general'): self.config.add_section('general')
             self.config.set('general', 'theme', theme_name)
-            with open('config.ini', 'w') as configfile:
-                self.config.write(configfile)
-        except Exception as e:
-            logging.error(f"Não foi possível salvar a preferência de tema: {e}")
+            with open('config.ini', 'w') as configfile: self.config.write(configfile)
+        except Exception as e: logging.error(f"Não foi possível salvar a preferência de tema: {e}")
 
     def load_and_apply_theme(self):
         self.config.read('config.ini')
         theme = self.config.get('general', 'theme', fallback='light')
         self.apply_theme(theme, from_load=True)
-
-        if theme == 'dark':
-            self.dark_mode_action.setChecked(True)
-        else:
-            self.light_mode_action.setChecked(True)
+        if theme == 'dark': self.dark_mode_action.setChecked(True)
+        else: self.light_mode_action.setChecked(True)
 
     def open_module_window(self):
         action_text = self.sender().text()
         widget_class, title = self.module_map[action_text]
+        for window in self.mdi_area.subWindowList():
+            if window.windowTitle() == title:
+                window.setFocus()
+                return
         sub_window = QMdiSubWindow()
         sub_window.setWidget(widget_class())
         sub_window.setWindowTitle(title)
@@ -248,22 +260,15 @@ rotinas operacionais, consultas de banco de dados e tarefas de desenvolvimento.<
 if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
-
-        # --- Bloco de verificação de licença ---
         is_valid, message = license_validator.check_license()
-
         if not is_valid:
             QMessageBox.critical(None, "Erro de Licença - MyOps", message)
             logging.error(f"Falha na validação da licença: {message}")
             sys.exit(1)
-
         logging.info(message)
-        # ----------------------------------------------------
-
         main_window = MainApplicationWindow()
         main_window.showMaximized()
         sys.exit(app.exec())
-
     except Exception as e:
         logging.critical("Ocorreu um erro fatal e a aplicação será encerrada.", exc_info=True)
         QMessageBox.critical(None, "Erro Crítico", f"A aplicação encontrou um erro fatal e precisa ser fechada.\n\nDetalhes foram salvos em 'myops_debug.log'.\n\nErro: {e}")

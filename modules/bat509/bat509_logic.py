@@ -1,118 +1,62 @@
-# C:\Meus Projetos\MyOps\modules\bat509\bat509_logic.py
+# modules/gfa/gfa_logic.py (Versão com Paramiko)
+import paramiko
 
-import oracledb
-import configparser
-from datetime import datetime
-from modules.common import security # Adicionado import de segurança
-
-def get_config(section='database_siebel'): # <-- CORREÇÃO APLICADA AQUI
-    """Lê a seção do Siebel Pós-Pago do config.ini e descriptografa a senha."""
-    config = configparser.ConfigParser()
-    config.read('config.ini')
-    if section in config:
-        user = config[section].get('user', '')
-        encrypted_password = config[section].get('password', '')
-        dsn = config[section].get('dsn', '')
-
-        # Descriptografa a senha antes de retornar
-        password = security.decrypt_password(encrypted_password)
-        
-        return user, password, dsn
-        
-    raise ConnectionError(f"Seção '{section}' não encontrada no 'config.ini'.")
-
-def mark_orders_for_extraction(order_numbers: list):
+def run_health_check_with_paramiko(host_alias, password):
     """
-    Processa uma lista de ordens, inserindo-as na tabela ACC_SBL_MARC_BAT509
-    para forçar sua re-extração, mimetizando o processo BAT801.
+    Conecta-se a um servidor via SSH usando Paramiko, executa um comando e retorna a saída.
     """
-    user, password, dsn = get_config()
+    # Mapeamento de alias para detalhes da conexão.
+    # Isso elimina a necessidade do arquivo C:\Users\...\.ssh\config
+    HOSTS = {
+        "gfa-prod": {
+            "hostname": "snevlxa106",
+            "username": "system"
+            # A senha é fornecida dinamicamente
+        }
+    }
+
+    if host_alias not in HOSTS:
+        return (False, f"O alias '{host_alias}' nao esta configurado no dicionario HOSTS.")
+
+    host_info = HOSTS[host_alias]
     
-    report = {'success': [], 'already_marked': [], 'not_found': [], 'errors': []}
-    src_file = f"BAT801_{datetime.now().strftime('%Y%m%d%H%M%S')}"
-    
-    execution_id = int(datetime.now().timestamp())
+    # Comando a ser executado no servidor remoto
+    command = "/appl/bea/PRODUCAO/MONITORACAO/PM_HEALTH/get_detailed_health_log.sh"
 
-    with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
-        with connection.cursor() as cursor:
-            for order_num in order_numbers:
-                order_num = order_num.strip()
-                if not order_num:
-                    continue
-                
-                try:
-                    # 1. Verifica se a ordem existe e obtém seu ROW_ID
-                    cursor.execute("SELECT ROW_ID FROM SIEBEL.S_ORDER WHERE ORDER_NUM = :order_num", order_num=order_num)
-                    order_row = cursor.fetchone()
-                    
-                    if not order_row:
-                        report['not_found'].append(order_num)
-                        continue
-                    
-                    order_row_id = order_row[0]
+    try:
+        # 1. Cria o cliente SSH
+        client = paramiko.SSHClient()
+        # Adiciona automaticamente a chave do host (menos seguro, mas mais fácil para distribuição interna)
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
-                    # 2. Verifica se a ordem já está marcada e pendente
-                    cursor.execute("""
-                        SELECT 1 FROM SIEBEL.ACC_SBL_MARC_BAT509
-                        WHERE ROW_ID = :row_id AND DATA_EXTRACAO IS NULL
-                    """, row_id=order_row_id)
-                    
-                    if cursor.fetchone():
-                        report['already_marked'].append(order_num)
-                        continue
+        # 2. Conecta ao servidor
+        client.connect(
+            hostname=host_info["hostname"],
+            username=host_info["username"],
+            password=password,
+            timeout=20 # Timeout de 20 segundos para a conexão
+        )
 
-                    # 3. Executa o INSERT ... SELECT mimetizando o BAT801
-                    insert_query = """
-                    INSERT INTO SIEBEL.ACC_SBL_MARC_BAT509 (
-                        ID, CREATED, LAST_UPD, CREATED_BY, LAST_UPD_BY, SRC_FILE,
-                        PROJETO, SERVICE_ID, ROW_ID, DATA_EXTRACAO, NOME_EXTRACAO
-                    )
-                    SELECT
-                        :exec_id,
-                        TO_CHAR(SO.CREATED, 'DD-MM-YYYY HH24:MI:SS'),
-                        TO_CHAR(SYSDATE, 'DD-MM-YYYY HH24:MI:SS'),
-                        '0-1', -- Usuário padrão de sistema (CREATED_BY)
-                        '0-1', -- Usuário padrão de sistema (LAST_UPD_BY)
-                        :src_file,
-                        'Marcacao para extracao da BAT509',
-                        SOI.X_SERVICE_ID,
-                        SO.ROW_ID,
-                        NULL,
-                        NULL
-                    FROM
-                        SIEBEL.S_ORDER SO
-                    LEFT JOIN
-                        SIEBEL.S_ORDER_ITEM SOI ON SO.ROW_ID = SOI.ORDER_ID AND SOI.ROW_ID = SOI.ROOT_ORDER_ITEM_ID
-                    WHERE
-                        SO.ORDER_NUM = :order_num
-                    AND ROWNUM = 1
-                    """
-                    
-                    cursor.execute(insert_query, exec_id=execution_id, src_file=src_file, order_num=order_num)
-                    
-                    if cursor.rowcount > 0:
-                        report['success'].append(order_num)
-                    else:
-                        raise RuntimeError("A query de SELECT interna para o INSERT não retornou dados.")
+        # 3. Executa o comando
+        stdin, stdout, stderr = client.exec_command(command, timeout=300) # Timeout de 5 minutos para o comando
 
-                except Exception as e:
-                    report['errors'].append(f"{order_num}: {e}")
+        # 4. Lê a saída e os erros
+        output = stdout.read().decode('utf-8').strip()
+        error = stderr.read().decode('utf-8').strip()
 
-        connection.commit()
-
-    # Monta uma mensagem de relatório final
-    summary = []
-    if report['success']:
-        summary.append(f"Ordens marcadas com sucesso: {', '.join(report['success'])}")
-    if report['already_marked']:
-        summary.append(f"Ordens que já estavam marcadas: {', '.join(report['already_marked'])}")
-    if report['not_found']:
-        summary.append(f"Ordens não encontradas: {', '.join(report['not_found'])}")
-    if report['errors']:
-        summary.append(f"Erros: {'; '.join(report['errors'])}")
+        if error:
+            # Se houver algo no 'stderr', consideramos um erro
+            return (False, f"Erro na execucao remota: {error}")
         
-    final_report = "\n".join(summary)
-    if report['success']:
-        final_report += f"\n\nID de Execução deste lote: {execution_id}"
-        
-    return final_report
+        return (True, output)
+
+    except paramiko.AuthenticationException:
+        return (False, "Falha na autenticacao. Verifique a senha.")
+    except paramiko.SSHException as e:
+        return (False, f"Erro no SSH: {e}")
+    except Exception as e:
+        return (False, f"Um erro inesperado ocorreu: {e}")
+    finally:
+        # 5. Garante que a conexão seja sempre fechada
+        if 'client' in locals() and client.get_transport() is not None:
+            client.close()
