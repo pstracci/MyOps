@@ -59,6 +59,7 @@ from PyQt6.QtCore import Qt, QPoint
 # --- Import dos módulos da aplicação ---
 from modules.gfa.gfa_ui import GfaHealthWidget
 from modules.bat452_scheduler.bat452_scheduler_ui import Bat452SchedulerWidget
+from modules.dms_extractor.dms_extractor_ui import DmsExtractorWidget
 from modules.contestacao.contestacao_ui import ContestacaoViewerWidget
 from modules.bat509.bat509_ui import Bat509ToolWidget
 from modules.object_viewer.object_viewer_ui import ObjectViewerWidget
@@ -120,16 +121,15 @@ class MainApplicationWindow(QMainWindow):
         self._create_menu_bar()
         self.load_and_apply_theme()
 
-    # --- MÉTODO _create_menu_bar TOTALMENTE ATUALIZADO ---
     def _create_menu_bar(self):
         menu_bar = self.menuBar()
         open_menu = menu_bar.addMenu("Abrir")
 
-        # O `module_map` continua sendo nosso "registro" central de todos os módulos
         self.module_map = {
             "Agendador de Processamento Massivo (BAT452)": (Bat452SchedulerWidget, "Agendador BAT452"),
             "Consultar Relacionamentos Siebel": (SiebelRelationWidget, "Consultar Relacionamentos Siebel"),
             "Carregador de Arquivos (SQL*Loader)": (SqlLoaderWidget, "Carregador de Arquivos"),
+            "Extrator de Faturas DMS": (DmsExtractorWidget, "Extrator de Faturas - DMS"),
             "Ferramentas Base Espelho": (EspelhoToolWidget, "Ferramentas Base Espelho"),
             "Ferramentas PGU": (PGUToolWidget, "Ferramentas PGU"),
             "Forçar Extração de Clientes/Contratos BAT223": (Bat223ToolWidget, "Forçar Extração de Clientes (BAT223)"),
@@ -141,29 +141,12 @@ class MainApplicationWindow(QMainWindow):
             "Monitor Health GFA": (GfaHealthWidget, "Monitor de Health Check - GFA"),
         }
         
-        # Nova estrutura para organizar os menus
         menu_structure = {
-            "Ferramentas de Banco de Dados": [
-                "Carregador de Arquivos (SQL*Loader)",
-                "Ferramentas Base Espelho",
-                "Monitor de Sessões",
-                "Monitor de 'Top SQL' (Agregado)",
-                "Visualizador de Objetos de Banco"
-            ],
-            "BATS": [
-                "Agendador de Processamento Massivo (BAT452)",
-                "Forçar Extração de Clientes/Contratos BAT223",
-                "Forçar Extração de Ordem (BAT509)"
-            ],
-            "Sistemas Legados": [
-                "Consultar Relacionamentos Siebel",
-                "Ferramentas PGU",
-                "Monitor Health GFA",
-                "Visualizador de Contestações"
-            ]
+            "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)", "Ferramentas Base Espelho", "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
+            "BATS": ["Agendador de Processamento Massivo (BAT452)", "Forçar Extração de Clientes/Contratos BAT223", "Forçar Extração de Ordem (BAT509)"],
+            "Sistemas Legados": ["Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações"]
         }
 
-        # Cria os sub-menus e adiciona as ações em cada um
         for category_name in sorted(menu_structure.keys()):
             sub_menu = open_menu.addMenu(category_name)
             for module_text in sorted(menu_structure[category_name]):
@@ -172,7 +155,6 @@ class MainApplicationWindow(QMainWindow):
                     action.triggered.connect(self.open_module_window)
                     sub_menu.addAction(action)
 
-        # O restante dos menus continua igual
         window_menu = menu_bar.addMenu("Janelas")
         cascade_action = QAction("Cascata", self); cascade_action.triggered.connect(self.mdi_area.cascadeSubWindows); window_menu.addAction(cascade_action)
         tile_action = QAction("Lado a Lado", self); tile_action.triggered.connect(self.mdi_area.tileSubWindows); window_menu.addAction(tile_action)
@@ -201,13 +183,13 @@ class MainApplicationWindow(QMainWindow):
         about_action.triggered.connect(self.show_about_dialog)
         help_menu.addAction(about_action)
 
-    # NENHUMA ALTERAÇÃO NECESSÁRIA NOS MÉTODOS ABAIXO
     def apply_theme(self, theme_name, from_load=False):
         app = QApplication.instance()
         if theme_name == 'dark':
             app.setStyleSheet(themes.get_dark_theme_qss())
         else:
-            app.setStyleSheet("QWidget { font-size: 9pt; }")
+            # --- ESTA É A LINHA QUE FOI ALTERADA ---
+            app.setStyleSheet(themes.get_light_theme_qss())
         if not from_load: self.save_theme_preference(theme_name)
 
     def save_theme_preference(self, theme_name):

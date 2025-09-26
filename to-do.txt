@@ -1,0 +1,10 @@
+
+
+
+As conexões nao devem precisar começar com a palavra database%
+criar um tabela de historico própria pra BAT452, PRA PODER VER as execuções passadas.
+no DMS pensar uma forma de aceitar varios vencimentos de forma facil.
+-- criar uma tela de consulta no PGU pra mostrar os dados do vendedor, pdvs associados, perfil, expiracao, blacklist... permitir nessa tela a exclusão e alteração dos campos data_expiracao e role.
+^-- novisualizador de objetos, permitir escolher a sessão, ou buscar logo em todas
+
+/appl/batch/timvendasutils/repo/br/com/timbrasil/timvendas/timvendasutils/0.0.1-SNAPSHOT

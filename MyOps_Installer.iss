@@ -15,10 +15,10 @@ SolidCompression=yes
 
 ; --- Aparência do assistente de instalação (Wizard) ---
 WizardStyle=modern
-; Imagem grande que aparece à esquerda do assistente
-WizardImageFile=build_assets\fundo.bmp
-; Imagem pequena que aparece no canto superior direito
-WizardSmallImageFile=build_assets\fundo.bmp
+; Imagem grande que aparece à esquerda do assistente (desativada)
+;WizardImageFile=build_assets\fundo.bmp
+; Imagem pequena que aparece no canto superior direito (desativada)
+;WizardSmallImageFile=build_assets\fundo.bmp
 ; Ícone que aparecerá em "Adicionar/Remover Programas"
 UninstallDisplayIcon={app}\MyOps.exe
 
@@ -37,11 +37,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 [Files]
 ; --- Arquivos que serão incluídos no instalador ---
 ; Copia TODO o conteúdo da pasta 'dist\MyOps' para o diretório de instalação '{app}'
-; recursesubdirs: inclui todas as subpastas (_internal, assets)
 ; Excludes: Especifica arquivos a NÃO serem incluídos (não queremos o log de debug)
 Source: "dist\MyOps\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "myops_debug.log"
-
-; Nota: A sintaxe acima é a forma mais eficiente de incluir todos os seus arquivos.
 
 
 [Icons]
