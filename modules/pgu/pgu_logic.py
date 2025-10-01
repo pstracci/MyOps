@@ -60,17 +60,60 @@ def execute_gerenciar_perfil(db_key, perfil, funcionalidades, acao, flg_sargento
     except oracledb.DatabaseError as e:
         raise Exception(f"Erro no banco de dados ao executar procedure de perfil: {e.args[0].message}")
 
-def search_seller(db_key, identifier, search_type):
+def get_seller_details(db_key, identifier, search_type):
+    """Busca todos os detalhes de um único vendedor e retorna como um dicionário."""
     user, password, dsn = get_config(db_key)
-    query = "SELECT VENDOR_ID, NAME, VENDOR_LOGIN, STATUS FROM VAR_VENDEDOR WHERE "
+    query = "SELECT * FROM VAR_VENDEDOR WHERE "
     query += "UPPER(VENDOR_LOGIN) = UPPER(:identifier)" if search_type == 'login' else "VENDOR_ID = :identifier"
     try:
         with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(query, identifier=identifier)
-                return cursor.fetchall()
+                columns = [col[0] for col in cursor.description]
+                row = cursor.fetchone()
+                if row:
+                    return dict(zip(columns, row))
+                return None
     except oracledb.DatabaseError as e:
         raise Exception(f"Erro no banco de dados ao pesquisar vendedor: {e.args[0].message}")
+
+def check_cpf_blacklist(db_key, cpf):
+    """Verifica se um CPF está na tabela de blacklist."""
+    user, password, dsn = get_config(db_key)
+    query = "SELECT 1 FROM VAR_CPF_BLACKLIST WHERE CPF = :cpf AND ROWNUM = 1"
+    try:
+        with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, cpf=cpf)
+                return cursor.fetchone() is not None
+    except oracledb.DatabaseError as e:
+        raise Exception(f"Erro no banco de dados ao checar blacklist: {e.args[0].message}")
+
+def get_seller_pdvs(db_key, vendor_id):
+    """Busca todos os PDVs associados a um vendedor."""
+    user, password, dsn = get_config(db_key)
+    query = """
+        SELECT 
+            A.VAR_VENDEDOR_VENDOR_ID AS CPF,
+            A.VAR_PDV_PDV_ID AS PDV,
+            B.NICKNAME,
+            B.CLASSIFICATION,
+            B.REGIONAL,
+            B.OPERATOR,
+            B.SEGMENT,
+            B.FRAUD_RISK
+        FROM VAR_VENDEDOR_PDV A, VAR_PDV B
+        WHERE A.VAR_PDV_PDV_ID = B.CUST_CODE
+        AND A.VAR_VENDEDOR_VENDOR_ID = :vendor_id
+        ORDER BY PDV DESC
+    """
+    try:
+        with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(query, vendor_id=vendor_id)
+                return cursor.fetchall()
+    except oracledb.DatabaseError as e:
+        raise Exception(f"Erro no banco de dados ao buscar PDVs: {e.args[0].message}")
 
 def execute_delete_seller(db_key, vendor_login):
     user, password, dsn = get_config(db_key)
@@ -93,6 +136,7 @@ def execute_delete_seller(db_key, vendor_login):
     except oracledb.DatabaseError as e:
         raise Exception(f"Erro no banco de dados ao executar procedure de deleção: {e.args[0].message}")
 
+# Funções do PdvManagerWidget (não modificadas)
 def get_seller_info_for_pdv(db_key, identifier, search_type):
     user, password, dsn = get_config(db_key)
     query = "SELECT VENDOR_ID, NAME FROM VAR_VENDEDOR WHERE "

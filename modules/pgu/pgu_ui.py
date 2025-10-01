@@ -13,6 +13,7 @@ from PyQt6.QtCore import Qt
 from modules.pgu import pgu_logic as db
 
 class ProfileManagerWidget(QWidget):
+    # ... (Esta classe não foi modificada)
     def __init__(self, parent_widget):
         super().__init__()
         self.parent_widget = parent_widget
@@ -33,14 +34,10 @@ class ProfileManagerWidget(QWidget):
         result_layout.addWidget(self.result_output); result_group.setLayout(result_layout); main_layout.addWidget(search_group); main_layout.addWidget(filter_group); main_layout.addWidget(self.results_table)
         main_layout.addWidget(action_group); main_layout.addWidget(result_group); self.search_button.clicked.connect(self.on_search); self.execute_button.clicked.connect(self.on_execute)
         self.clear_button.clicked.connect(self.clear_all_fields); self.profile_input.returnPressed.connect(self.on_search); self.filter_input.textChanged.connect(self.apply_filter)
-    
-    def get_db_key(self):
-        return self.parent_widget.db_combo.currentData()
-
+    def get_db_key(self): return self.parent_widget.db_combo.currentData()
     def clear_all_fields(self):
         self.profile_input.clear(); self.filter_input.clear(); self.results_table.setRowCount(0); self.features_input.clear(); self.result_output.clear()
         self.action_combo.setCurrentIndex(0); self.sargento_combo.setCurrentIndex(0); self.execute_button.setEnabled(False); self.profile_input.setFocus()
-    
     def on_search(self):
         db_key = self.get_db_key()
         if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
@@ -51,7 +48,6 @@ class ProfileManagerWidget(QWidget):
             if results: self.execute_button.setEnabled(True)
             else: QMessageBox.information(self, "Resultado", f"Nenhum perfil encontrado para o ID '{profile_id}'.")
         except Exception as e: QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
-    
     def on_execute(self):
         db_key = self.get_db_key()
         if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
@@ -65,73 +61,177 @@ class ProfileManagerWidget(QWidget):
             self.result_output.setText(f"--- Resultado ---\nCódigo: {result['cod_retorno']}\nMensagem: {result['msg_retorno']}\n\n--- Saída DBMS_OUTPUT ---\n{result['dbms_output']}")
             if result.get("cod_retorno") == 0: self.on_search()
         except Exception as e: QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
-    
     def populate_table(self, data):
         self.results_table.setRowCount(0)
         for row_num, row_data in enumerate(data):
             self.results_table.insertRow(row_num)
             for col_num, cell_data in enumerate(row_data): self.results_table.setItem(row_num, col_num, QTableWidgetItem(str(cell_data)))
-    
     def apply_filter(self):
         filter_text = self.filter_input.text().strip().lower()
         for row in range(self.results_table.rowCount()):
             item = self.results_table.item(row, 2)
             if item: self.results_table.setRowHidden(row, filter_text not in item.text().lower())
 
-class SellerDeleterWidget(QWidget):
+class SellerQueryWidget(QWidget):
     def __init__(self, parent_widget):
         super().__init__()
         self.parent_widget = parent_widget
-        main_layout = QVBoxLayout(self); search_group = QGroupBox("1. Pesquisar Vendedor"); search_layout = QFormLayout(); search_options_layout = QHBoxLayout()
-        self.cpf_radio = QRadioButton("CPF"); self.login_radio = QRadioButton("Login/Matrícula"); self.cpf_radio.setChecked(True)
+        self.current_seller_login = None
+        main_layout = QVBoxLayout(self)
+        search_group = QGroupBox("1. Pesquisar Vendedor")
+        search_layout = QFormLayout()
+        search_options_layout = QHBoxLayout()
+        self.cpf_radio = QRadioButton("CPF"); self.cpf_radio.setChecked(True)
+        self.login_radio = QRadioButton("Login/Matrícula")
         search_options_layout.addWidget(self.cpf_radio); search_options_layout.addWidget(self.login_radio)
-        self.seller_input = QLineEdit(placeholderText="Digite o CPF ou Login do vendedor"); self.search_seller_button = QPushButton("Pesquisar Vendedor")
-        search_layout.addRow(QLabel("Buscar por:"), search_options_layout); search_layout.addRow(QLabel("Identificador:"), self.seller_input); search_layout.addRow(self.search_seller_button)
-        search_group.setLayout(search_layout); self.seller_table = QTableWidget(); self.seller_table.setColumnCount(4); self.seller_table.setHorizontalHeaderLabels(["CPF (Vendor ID)", "Nome", "Login", "Status"])
-        self.seller_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch); self.seller_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        action_group = QGroupBox("2. Executar Ação"); action_buttons_layout = QHBoxLayout(); self.delete_button = QPushButton("Deletar Vendedor Selecionado"); self.delete_button.setEnabled(False)
-        self.clear_button = QPushButton("Limpar Tela"); action_buttons_layout.addWidget(self.delete_button); action_buttons_layout.addWidget(self.clear_button); action_group.setLayout(action_buttons_layout)
-        result_group = QGroupBox("3. Resultado da Execução"); result_layout = QVBoxLayout(); self.delete_output = QTextEdit(readOnly=True); self.delete_output.setFont(QFont("Courier", 10))
-        result_layout.addWidget(self.delete_output); result_group.setLayout(result_layout); main_layout.addWidget(search_group); main_layout.addWidget(self.seller_table); main_layout.addWidget(action_group)
-        main_layout.addWidget(result_group); self.search_seller_button.clicked.connect(self.on_search_seller); self.seller_input.returnPressed.connect(self.on_search_seller)
-        self.delete_button.clicked.connect(self.on_delete_seller); self.clear_button.clicked.connect(self.clear_all_fields)
-    
+        self.seller_input = QLineEdit(placeholderText="Digite o CPF ou Login do vendedor")
+        self.search_seller_button = QPushButton("Pesquisar Vendedor")
+        search_layout.addRow(QLabel("Buscar por:"), search_options_layout)
+        search_layout.addRow(QLabel("Identificador:"), self.seller_input)
+        search_layout.addRow(self.search_seller_button)
+        search_group.setLayout(search_layout)
+        results_group = QGroupBox("2. Dados do Vendedor")
+        results_layout = QVBoxLayout(results_group)
+        self.seller_details_output = QTextEdit(readOnly=True)
+        self.seller_details_output.setFont(QFont("Courier", 10))
+        results_layout.addWidget(self.seller_details_output)
+        pdvs_group = QGroupBox("PDVs Associados")
+        pdvs_layout = QVBoxLayout(pdvs_group)
+        self.pdv_table = QTableWidget()
+        self.pdv_table.setColumnCount(8)
+        self.pdv_table.setHorizontalHeaderLabels(["CPF", "PDV", "Nickname", "Classificação", "Regional", "Operador", "Segmento", "Risco Fraude"])
+        self.pdv_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.pdv_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        self.pdv_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        pdvs_layout.addWidget(self.pdv_table)
+        action_group = QGroupBox("3. Ações")
+        action_buttons_layout = QHBoxLayout(action_group)
+        self.delete_button = QPushButton("Excluir Vendedor da Base")
+        self.delete_button.setEnabled(False)
+        self.clear_button = QPushButton("Limpar Tela")
+        action_buttons_layout.addWidget(self.delete_button)
+        action_buttons_layout.addWidget(self.clear_button)
+        delete_result_group = QGroupBox("4. Resultado da Exclusão")
+        delete_result_layout = QVBoxLayout(delete_result_group)
+        self.delete_output = QTextEdit(readOnly=True)
+        self.delete_output.setFont(QFont("Courier", 10))
+        delete_result_layout.addWidget(self.delete_output)
+        main_layout.addWidget(search_group)
+        main_layout.addWidget(results_group, 40)
+        main_layout.addWidget(pdvs_group, 60)
+        main_layout.addWidget(action_group)
+        main_layout.addWidget(delete_result_group)
+        self.search_seller_button.clicked.connect(self.on_search_seller)
+        self.seller_input.returnPressed.connect(self.on_search_seller)
+        self.delete_button.clicked.connect(self.on_delete_seller)
+        self.clear_button.clicked.connect(lambda: self.clear_all_fields(clear_input=True))
+
     def get_db_key(self):
         return self.parent_widget.db_combo.currentData()
 
-    def clear_all_fields(self):
-        self.seller_input.clear(); self.seller_table.setRowCount(0); self.delete_output.clear(); self.cpf_radio.setChecked(True); self.delete_button.setEnabled(False); self.seller_input.setFocus()
-    
+    def clear_all_fields(self, clear_input=False):
+        # --- LÓGICA DE LIMPEZA CORRIGIDA ---
+        if clear_input:
+            self.seller_input.clear()
+        
+        self.seller_details_output.clear()
+        self.pdv_table.setRowCount(0)
+        self.delete_output.clear()
+        self.delete_button.setEnabled(False)
+        self.current_seller_login = None
+        
+        if clear_input:
+            self.cpf_radio.setChecked(True)
+            self.seller_input.setFocus()
+
     def on_search_seller(self):
         db_key = self.get_db_key()
-        if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
-        self.delete_button.setEnabled(False); identifier = self.seller_input.text().strip(); search_type = 'login' if self.login_radio.isChecked() else 'cpf'
-        if not identifier: QMessageBox.warning(self, "Atenção", "Por favor, informe um identificador."); return
+        if not db_key:
+            QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida.")
+            return
+
+        # --- LÓGICA DE PESQUISA CORRIGIDA ---
+        # 1. Lê o identificador PRIMEIRO
+        identifier = self.seller_input.text().strip()
+        
+        # 2. Limpa apenas os resultados anteriores, mantendo o campo de busca
+        self.clear_all_fields(clear_input=False)
+        
+        search_type = 'login' if self.login_radio.isChecked() else 'cpf'
+        
+        # 3. Verifica se o identificador está vazio APÓS a leitura
+        if not identifier:
+            QMessageBox.warning(self, "Atenção", "Por favor, informe um identificador.")
+            return
+
         try:
-            results = db.search_seller(db_key, identifier, search_type); self.seller_table.setRowCount(0)
-            if results:
-                for row_data in results:
-                    row_num = self.seller_table.rowCount(); self.seller_table.insertRow(row_num)
-                    for col_num, cell_data in enumerate(row_data): self.seller_table.setItem(row_num, col_num, QTableWidgetItem(str(cell_data)))
-                self.delete_button.setEnabled(True)
-            else: QMessageBox.information(self, "Resultado", f"Nenhum vendedor encontrado para '{identifier}'.")
-        except Exception as e: QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
+            seller_data = db.get_seller_details(db_key, identifier, search_type)
+            if not seller_data:
+                QMessageBox.information(self, "Resultado", f"Nenhum vendedor encontrado para '{identifier}'.")
+                return
+
+            self.current_seller_login = seller_data.get('VENDOR_LOGIN')
+            is_blacklisted = db.check_cpf_blacklist(db_key, seller_data.get('VENDOR_ID'))
+            
+            details_html = ""
+            if is_blacklisted:
+                details_html += "<p><b style='color:red;'>ALERTA: CPF ENCONTRADO NA BLACKLIST!</b></p>"
+            
+            details_html += f"""
+                <p>
+                <b>CPF (VENDOR_ID):</b> <u>{seller_data.get('VENDOR_ID', 'N/A')}</u><br>
+                <b>Nome Completo:</b> <u>{seller_data.get('NAME', '')} {seller_data.get('LAST_NAME', '')}</u><br>
+                <b>Login/Matrícula:</b> <u>{seller_data.get('VENDOR_LOGIN', 'N/A')}</u><br>
+                <b>Status:</b> <u>{'Ativo' if seller_data.get('STATUS') == 1 else 'Inativo'} ({seller_data.get('STATUS')})</u><br>
+                <b>Perfil:</b> <u>{seller_data.get('VAR_PROF_VEND_PROF_ID', 'N/A')}</u><br>
+                <b>Email:</b> {seller_data.get('EMAIL', 'N/A')}<br>
+                <b>Data de Criação:</b> {seller_data.get('CREATE_DATE', 'N/A')}<br>
+                <b>Data de Nascimento:</b> {seller_data.get('BIRTH_DATE', 'N/A')}<br>
+                <b>Primeiro Acesso:</b> {seller_data.get('FIRST_ACCESS', 'N/A')}<br>
+                <b>ID Sargento:</b> {seller_data.get('VAR_SARGENTO_SARGENTO_ID', 'N/A')}<br>
+                <b>Matrícula Carga:</b> {seller_data.get('MATRICULA_RESPONSAVEL_CARGA', 'N/A')}
+                </p>
+            """
+            self.seller_details_output.setHtml(details_html)
+            
+            pdv_list = db.get_seller_pdvs(db_key, seller_data.get('VENDOR_ID'))
+            self.pdv_table.setRowCount(0)
+            for row_num, row_data in enumerate(pdv_list):
+                self.pdv_table.insertRow(row_num)
+                for col_num, cell_data in enumerate(row_data):
+                    self.pdv_table.setItem(row_num, col_num, QTableWidgetItem(str(cell_data)))
+            
+            self.delete_button.setEnabled(True)
+
+        except Exception as e:
+            QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
     
     def on_delete_seller(self):
         db_key = self.get_db_key()
-        if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
-        selected_rows = self.seller_table.selectionModel().selectedRows()
-        if not selected_rows: QMessageBox.warning(self, "Atenção", "Por favor, selecione um vendedor na tabela para deletar."); return
-        vendor_login = self.seller_table.item(selected_rows[0].row(), 2).text()
-        if not vendor_login: QMessageBox.critical(self, "Erro", "Não foi possível obter o login do vendedor selecionado."); return
-        if QMessageBox.question(self, 'Confirmação', f"Esta ação é irreversível e irá deletar o vendedor com login '{vendor_login}'.\n\nDeseja continuar?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.No: return
-        self.delete_output.setText(f"Executando deleção para {vendor_login}, por favor aguarde..."); QApplication.processEvents()
+        if not db_key:
+            QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida.")
+            return
+
+        if not self.current_seller_login:
+            QMessageBox.critical(self, "Erro", "Nenhum vendedor carregado para exclusão. Faça uma nova pesquisa.")
+            return
+            
+        if QMessageBox.question(self, 'Confirmação', f"Esta ação é irreversível e irá deletar o vendedor com login '{self.current_seller_login}'.\n\nDeseja continuar?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.No:
+            return
+
+        self.delete_output.setText(f"Executando deleção para {self.current_seller_login}, por favor aguarde...")
+        QApplication.processEvents()
+        
         try:
-            result_text = db.execute_delete_seller(db_key, vendor_login); self.delete_output.setText(result_text); self.seller_table.setRowCount(0); self.delete_button.setEnabled(False)
+            result_text = db.execute_delete_seller(db_key, self.current_seller_login)
+            self.delete_output.setText(result_text)
+            self.clear_all_fields(clear_input=True)
         except Exception as e:
-            self.delete_output.setText(f"Falha na execução.\n\nErro: {str(e)}"); QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
+            self.delete_output.setText(f"Falha na execução.\n\nErro: {str(e)}")
+            QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
 
 class PdvManagerWidget(QWidget):
+    # ... (Esta classe não foi modificada)
     def __init__(self, parent_widget):
         super().__init__()
         self.parent_widget = parent_widget
@@ -157,10 +257,7 @@ class PdvManagerWidget(QWidget):
         self.seller_input.returnPressed.connect(self.on_search); self.add_button.clicked.connect(self.move_to_assigned); self.remove_button.clicked.connect(self.move_to_available)
         self.apply_button.clicked.connect(self.on_apply_changes); self.clear_button.clicked.connect(self.clear_all_fields); self.available_filter_input.textChanged.connect(self.filter_available_list)
         self.assigned_filter_input.textChanged.connect(self.filter_assigned_list)
-    
-    def get_db_key(self):
-        return self.parent_widget.db_combo.currentData()
-
+    def get_db_key(self): return self.parent_widget.db_combo.currentData()
     def on_search(self):
         db_key = self.get_db_key()
         if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
@@ -176,16 +273,13 @@ class PdvManagerWidget(QWidget):
             for code, nickname in all_pdvs_data:
                 if code not in assigned_codes: item = QListWidgetItem(f"{code} - {nickname}"); item.setData(Qt.ItemDataRole.UserRole, code); self.available_list.addItem(item)
         except Exception as e: QMessageBox.critical(self, "Erro de Banco de Dados", str(e))
-    
     def _move_items(self, source_list, dest_list):
         selected_items = source_list.selectedItems()
         if not selected_items: return
         for item in selected_items: source_list.takeItem(source_list.row(item)); dest_list.addItem(item)
         self.changes_made = True; self.apply_button.setEnabled(True); self.filter_available_list(); self.filter_assigned_list()
-    
     def move_to_assigned(self): self._move_items(self.available_list, self.assigned_list)
     def move_to_available(self): self._move_items(self.assigned_list, self.available_list)
-    
     def on_apply_changes(self):
         db_key = self.get_db_key()
         if not db_key: QMessageBox.warning(self, "Atenção", "Por favor, selecione uma conexão válida."); return
@@ -197,17 +291,14 @@ class PdvManagerWidget(QWidget):
             result_message = db.apply_pdv_changes(db_key, self.current_vendor_id, final_assigned_codes); self.result_output.setText(result_message)
             self.changes_made = False; self.apply_button.setEnabled(False)
         except Exception as e: QMessageBox.critical(self, "Erro de Banco de Dados", str(e)); self.result_output.setText(f"Falha ao aplicar mudanças:\n{e}")
-    
     def clear_all_fields(self, clear_input=True):
         if clear_input: self.seller_input.clear()
         self.assigned_list.clear(); self.available_list.clear(); self.assigned_filter_input.clear(); self.available_filter_input.clear(); self.result_output.clear()
         if clear_input: self.cpf_radio.setChecked(True); self.searched_seller_label.setText("Nenhum vendedor pesquisado."); self.seller_input.setFocus()
         self.apply_button.setEnabled(False); self.changes_made = False; self.current_vendor_id = None
-    
     def filter_list(self, list_widget, filter_input):
         filter_text = filter_input.text().strip().lower()
         for i in range(list_widget.count()): list_widget.item(i).setHidden(filter_text not in list_widget.item(i).text().lower())
-    
     def filter_available_list(self): self.filter_list(self.available_list, self.available_filter_input)
     def filter_assigned_list(self): self.filter_list(self.assigned_list, self.assigned_filter_input)
 
@@ -227,11 +318,12 @@ class PGUToolWidget(QWidget):
         main_layout.addWidget(conn_group)
 
         self.tabs = QTabWidget()
+        self.seller_query_tab = SellerQueryWidget(self)
         self.profile_tab = ProfileManagerWidget(self)
-        self.seller_tab = SellerDeleterWidget(self)
         self.pdv_tab = PdvManagerWidget(self)
+        
+        self.tabs.addTab(self.seller_query_tab, "Consulta Vendedor")
         self.tabs.addTab(self.profile_tab, "Gerenciar Perfis")
-        self.tabs.addTab(self.seller_tab, "Excluir Vendedor")
         self.tabs.addTab(self.pdv_tab, "Atribuir PDVs")
         
         main_layout.addWidget(self.tabs)

@@ -142,9 +142,9 @@ class MainApplicationWindow(QMainWindow):
         }
         
         menu_structure = {
-            "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)", "Ferramentas Base Espelho", "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
+            "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)",  "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
             "BATS": ["Agendador de Processamento Massivo (BAT452)", "Forçar Extração de Clientes/Contratos BAT223", "Forçar Extração de Ordem (BAT509)"],
-            "Sistemas Legados": ["Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações"]
+            "Sistemas Legados": ["Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"]
         }
 
         for category_name in sorted(menu_structure.keys()):
