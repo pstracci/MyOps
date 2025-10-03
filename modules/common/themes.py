@@ -4,6 +4,7 @@ def get_dark_theme_qss():
     """
     Retorna uma folha de estilos QSS (Qt Style Sheets) para um tema escuro completo.
     """
+    # O tema escuro não precisa de alterações.
     return """
         /* Estilo geral para todos os widgets */
         QWidget {
@@ -32,11 +33,10 @@ def get_dark_theme_qss():
         QLineEdit:focus, QTextEdit:focus, QComboBox:focus { border: 1px solid #42a5f5; }
         QComboBox::drop-down { border: none; subcontrol-origin: padding; subcontrol-position: top right; width: 20px; }
 
-        /* --- CORREÇÃO DE LAYOUT DO GROUPBOX AQUI --- */
         QGroupBox {
             border: 1px solid #555555;
             border-radius: 4px;
-            margin-top: 15px; /* Aumentado para dar espaço vertical ao título */
+            margin-top: 15px;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
@@ -46,13 +46,13 @@ def get_dark_theme_qss():
             background-color: #353535;
         }
         
-        #MasterInfoGroup { background-color: #4a4a4a; border-radius: 4px; border: 1px solid #666666; }
-
         QHeaderView::section { background-color: #4a4a4a; color: #e0e0e0; padding: 4px; border: 1px solid #666666; }
-        QTableWidget, QTreeWidget { gridline-color: #555555; background-color: #2a2a2a; }
-        QTableWidget::item:selected, QTreeWidget::item:selected {
-            background-color: #42a5f5;
-            color: #ffffff;
+        QTableWidget, QTreeWidget, QListWidget { gridline-color: #555555; background-color: #2a2a2a; }
+        
+        QTableWidget::item:selected, QTreeWidget::item:selected, QListWidget::item:selected {
+            background-color: #3E3E3E;
+            color: #FFFFFF;
+            border: 1px solid #42a5f5;
         }
         
         QTabWidget::pane { border: 1px solid #555555; top: -1px; }
@@ -93,29 +93,26 @@ def get_light_theme_qss():
         QPushButton:hover { background-color: #e8e8e8; border-color: #b0b0b0; }
         QPushButton:pressed { background-color: #42a5f5; border-color: #42a5f5; color: #ffffff; }
         QPushButton:disabled { background-color: #f5f5f5; color: #a0a0a0; }
-
+        
+        /* --- ALTERAÇÃO FINAL: Estilo super simplificado para teste --- */
         QCheckBox::indicator {
             border: 1px solid #909090;
-            background-color: #fcfcfc;
+            background-color: #FEFEFE;
             width: 15px;
             height: 15px;
             border-radius: 3px;
         }
-        QCheckBox::indicator:hover { border: 1px solid #42a5f5; }
         QCheckBox::indicator:checked {
             background-color: #42a5f5;
-            border: 1px solid #42a5f5;
-            image: url(./assets/check-light.svg);
         }
         
         QLineEdit, QTextEdit, QComboBox, QSpinBox, QDateTimeEdit { background-color: #ffffff; color: #212121; border: 1px solid #c0c0c0; border-radius: 3px; padding: 4px; }
         QComboBox::drop-down { border: none; subcontrol-origin: padding; subcontrol-position: top right; width: 20px; }
         
-        /* --- CORREÇÃO DE LAYOUT DO GROUPBOX AQUI --- */
         QGroupBox {
             border: 1px solid #c0c0c0;
             border-radius: 4px;
-            margin-top: 15px; /* Aumentado para dar espaço vertical ao título */
+            margin-top: 15px;
         }
         QGroupBox::title {
             subcontrol-origin: margin;
@@ -124,13 +121,14 @@ def get_light_theme_qss():
             font-weight: bold;
             background-color: #f0f0f0;
         }
-        #MasterInfoGroup { background-color: #dcdcdc; border-radius: 4px; border: 1px solid #c0c0c0; }
 
         QHeaderView::section { background-color: #e8e8e8; color: #212121; padding: 4px; border: 1px solid #d0d0d0; }
         QTableWidget, QTreeWidget, QListWidget { background-color: #ffffff; alternate-background-color: #f7f7f7; gridline-color: #dcdcdc; }
+        
         QTableWidget::item:selected, QTreeWidget::item:selected, QListWidget::item:selected {
-            background-color: #42a5f5;
-            color: #ffffff;
+            background-color: #F5F5F5;
+            color: #000000;
+            border: 1px solid #42a5f5;
         }
         QLineEdit:focus, QTextEdit:focus, QComboBox:focus, QTableWidget:focus, QTreeWidget:focus, QListWidget:focus { border: 1px solid #42a5f5; }
         
