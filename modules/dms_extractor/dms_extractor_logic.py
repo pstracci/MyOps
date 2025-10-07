@@ -118,29 +118,34 @@ def get_available_invoices(db_section_key, siebel_db_key, search_type, search_va
         return False, invoices
 
     for invoice in invoices:
-        # --- INÍCIO DA CORREÇÃO ---
-        # Converte o customer_id do DMS para string ANTES de procurar no mapa
         customer_id = str(invoice.get('customeridfatura'))
-        # --- FIM DA CORREÇÃO ---
         invoice['custcode'] = id_custcode_map.get(customer_id, 'N/A')
 
     return True, invoices
 
 def run_remote_extraction(invoices_to_process):
-    # (Esta função permanece inalterada)
     if not invoices_to_process:
         return (False, "Nenhuma fatura selecionada para processar.")
+    
     first_customer_id = invoices_to_process[0]['customeridfatura']
-    file_content = ""
+    
+    # --- INÍCIO DA CORREÇÃO ---
+    # Adiciona um cabeçalho ao arquivo para compatibilidade com o processo Java
+    file_content = "CUSTOMER_ID|DATA_VENCIMENTO\n"
+    # --- FIM DA CORREÇÃO ---
+    
     for inv in invoices_to_process:
         file_content += f"{inv['customeridfatura']}|{inv['datavencimentofatura']}\n"
+    
     temp_dir = tempfile.gettempdir()
     timestamp = datetime.now().strftime('%d%m%Y')
     remote_filename = f"cli_{first_customer_id}_{timestamp}.txt"
     remote_input_path = f"/dms/scripts/RESSARCIMENTO_PDF/input/{remote_filename}"
     local_content_path = os.path.join(temp_dir, remote_filename)
+    
     with open(local_content_path, 'w', encoding='utf-8') as f:
         f.write(file_content)
+        
     ssh_alias = "dms-prod" 
     script_user = "system"
     script_pass = "dmstimprd01"
@@ -149,6 +154,7 @@ def run_remote_extraction(invoices_to_process):
         f"nohup /dms/scripts/bin/ressarcimentoPdf_teste.sh {script_user} {script_pass} {remote_input_path} 1 > "
         f"/dms/scripts/RESSARCIMENTO_PDF/log/nohup_{remote_filename.replace('.txt', '.log')} 2>&1 &"
     )
+    
     local_content_path_for_scp = local_content_path.replace("\\", "/")
     batch_script_content = f'''
 @echo off
@@ -163,11 +169,14 @@ timeout /t 5 > nul
 exit
 '''
     temp_bat_fd, temp_bat_path = tempfile.mkstemp(text=True, suffix='.bat')
+    
     with os.fdopen(temp_bat_fd, 'w') as bat_file:
         bat_file.write(batch_script_content)
+        
     try:
         if sys.platform != "win32":
             return (False, "Esta funcionalidade só é compatível com Windows.")
+        
         subprocess.Popen(
             ['cmd.exe', '/c', 'start', f"Extracao de Fatura DMS - {first_customer_id}", temp_bat_path],
             creationflags=subprocess.CREATE_NO_WINDOW

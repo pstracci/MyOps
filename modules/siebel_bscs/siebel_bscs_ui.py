@@ -54,6 +54,13 @@ class SiebelBscsWidget(QWidget):
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             data = logic.get_comparison_data(msisdn, db_section)
+
+            # CORREÇÃO: Verifica se algum dado foi encontrado antes de tentar popular a tela
+            if not data.get("siebel", {}).get("profile") and not data.get("bscsix", {}).get("profile"):
+                QMessageBox.information(self, "Não Encontrado", f"O MSISDN '{msisdn}' não foi localizado em nenhum dos sistemas.")
+                QApplication.restoreOverrideCursor() # Restaura o cursor antes de sair
+                return
+
             self._populate_siebel_data(data.get("siebel", {}))
             self._populate_bscsix_data(data.get("bscsix", {}))
             self._update_validation_status(data.get("validation", {}))
@@ -88,7 +95,6 @@ class SiebelBscsWidget(QWidget):
         self.comparison_table.resizeColumnsToContents()
         self.comparison_table.horizontalHeader().setStretchLastSection(True)
         
-        # CORREÇÃO: Força o reset da ordenação da tabela para usar a nossa ordem customizada
         self.comparison_table.sortByColumn(-1, Qt.SortOrder.AscendingOrder)
         self.comparison_table.setSortingEnabled(True)
 

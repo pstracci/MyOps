@@ -2,9 +2,10 @@
 
 import oracledb
 import configparser
+import re
+import unicodedata
 from modules.common import security
 
-# ... Funções get_database_sections, get_config, etc. (sem alterações) ...
 def get_database_sections():
     config = configparser.ConfigParser(); config.read('config.ini')
     return [s for s in config.sections() if s.startswith('database_')]
@@ -28,31 +29,30 @@ def _convert_fetchall_to_dict_list(cursor, rows):
 
 def get_comparison_data(msisdn, db_section):
     user, password, dsn = get_config(db_section)
-    all_data = {
-        "siebel": {"profile": None, "assets": []},
-        "bscsix": {"profile": None, "services": []},
-        "validation": {"plan_match_status": "N/A"},
-        "comparison": {}
-    }
+    all_data = { "siebel": {"profile": None, "assets": []}, "bscsix": {"profile": None, "services": []},
+                 "validation": {"plan_match_status": "N/A"}, "comparison": {} }
     try:
         with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
             with connection.cursor() as cursor:
                 all_data["siebel"] = _get_siebel_customer_and_assets(cursor, msisdn)
                 all_data["bscsix"] = _get_bscsix_full_profile_and_services(cursor, msisdn)
                 
-                siebel_plan_code = all_data["siebel"].get("profile", {}).get('PLANO_CODIGO')
-                bscsix_plan_code = all_data["bscsix"].get("profile", {}).get('PLANO_CODIGO')
+                # CORREÇÃO: Verifica se o perfil existe antes de pegar o código do plano
+                siebel_profile = all_data["siebel"].get("profile")
+                bscsix_profile = all_data["bscsix"].get("profile")
+                
+                siebel_plan_code = siebel_profile.get("PLANO_CODIGO") if siebel_profile else None
+                bscsix_plan_code = bscsix_profile.get("PLANO_CODIGO") if bscsix_profile else None
+
                 if siebel_plan_code and bscsix_plan_code:
                     all_data["validation"] = _validate_plans(cursor, siebel_plan_code, bscsix_plan_code)
                 
-                # CORREÇÃO: Chamando a função de comparação por código
                 all_data["comparison"] = _compare_assets_and_services_by_code(cursor, all_data["siebel"]["assets"], all_data["bscsix"]["services"])
     except oracledb.DatabaseError as e:
         error, = e.args; raise Exception(f"Erro de banco de dados: {error.message.strip()}")
     return all_data
 
 def _get_siebel_customer_and_assets(cursor, msisdn):
-    # ... (Esta função já está correta e não precisa de alterações) ...
     data = {"profile": None, "assets": []}
     query = """
         SELECT c.name as cpf_cnpj, c.alias_name as nome_cliente, c.cust_stat_cd as status_cliente,
@@ -90,7 +90,6 @@ def _get_siebel_customer_and_assets(cursor, msisdn):
     return data
 
 def _get_bscsix_full_profile_and_services(cursor, msisdn):
-    # ... (Esta função já está correta e não precisa de alterações) ...
     data = {"profile": None, "services": []}
     profile_query = "SELECT CUSTOMER_ID, CUSTCODE, CO_ID, CH_STATUS FROM ssplunk001.PM_SPLUNK_CASCADE_POS_FIBER@LK_BSCSIX_SYSADM_001 WHERE msisdn = :msisdn and CH_STATUS = 'a'"
     cursor.execute(profile_query, msisdn=msisdn)
@@ -127,7 +126,6 @@ def _get_bscsix_full_profile_and_services(cursor, msisdn):
     return data
 
 def _validate_plans(cursor, siebel_plan_code, bscsix_plan_code):
-    """Lógica especial para o plano, que verifica se o código do cliente está na lista de códigos possíveis para aquele plano."""
     validation = {"plan_match_status": "Não Encontrado no De-Para"}
     query = "SELECT product_code FROM siebel.pm_siebel_catalog_oms_prod WHERE commercial_product_id = :siebel_code"
     cursor.execute(query, siebel_code=siebel_plan_code)
@@ -144,24 +142,20 @@ def _validate_plans(cursor, siebel_plan_code, bscsix_plan_code):
 
 
 def _compare_assets_and_services_by_code(cursor, siebel_assets, bscsix_services):
-    """CORREÇÃO: Esta função agora usa estritamente a tabela de-para para a correspondência de códigos."""
     siebel_part_nums = [asset['CODIGO_PRODUTO'] for asset in siebel_assets if asset.get('CODIGO_PRODUTO')]
     if not siebel_part_nums:
         return {"matched": [], "siebel_only": siebel_assets, "bscsix_only": bscsix_services}
 
     format_strings = ','.join([':%d' % i for i in range(1, len(siebel_part_nums) + 1)])
-    # A query de mapeamento usa a coluna correta 'product_id' que corresponde ao SHDES
     map_query = f"SELECT commercial_product_id, product_id FROM siebel.pm_siebel_catalog_oms_prod WHERE commercial_product_id IN ({format_strings})"
     cursor.execute(map_query, siebel_part_nums)
     
-    # O dicionário mapeia: {Siebel Part Num -> BSCSIX SHDES}
     mapping = {str(row[0]).strip(): str(row[1]).strip() for row in cursor.fetchall()}
 
     matched, siebel_only, bscsix_copy = [], [], list(bscsix_services)
     
     for s_asset in siebel_assets:
         s_part_num = s_asset.get('CODIGO_PRODUTO')
-        # Pula o próprio plano da lista de serviços para não poluir a comparação
         if s_asset.get('CATEGORY_CD') == 'PLANO': continue
             
         expected_shdes = mapping.get(str(s_part_num).strip())
