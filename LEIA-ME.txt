@@ -127,6 +127,6 @@ CONTATO E SUPORTE
 Para reportar bugs, solicitar novas funcionalidades ou obter suporte,
 entre em contato através de:
 
-Email: (paulo.stracci@accenture.com)
+Email: (paulo.stracci@gmail.com)
 
 Desenvolvedor: (Paulo Stracci - AM Siebel)
