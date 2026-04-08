@@ -59,6 +59,7 @@ from modules.top_sql.top_sql_ui import TopSqlMonitorWidget
 from modules.bat223.bat223_ui import Bat223ToolWidget
 from modules.siebel_relation.siebel_relation_ui import SiebelRelationWidget
 from modules.siebel_bscs.siebel_bscs_ui import SiebelBscsWidget
+from modules.change_manager.change_manager_ui import ChangeManagerWidget
 from modules.common import themes
 from modules.common import license_validator
 
@@ -151,11 +152,13 @@ class MainApplicationWindow(QMainWindow):
             "Visualizador de Contestações": (ContestacaoViewerWidget, "Visualizador de Contestações"),
             "Visualizador de Objetos de Banco": (ObjectViewerWidget, "Visualizador de Objetos"),
             "Monitor Health GFA": (GfaHealthWidget, "Monitor de Health Check - GFA"),
+            "Gerenciamento de Changes": (ChangeManagerWidget, "Gerenciamento de Changes"),
         }
         menu_structure = {
             "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)",  "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
             "BATS": ["Agendador de Processamento Massivo (BAT452)", "Forçar Extração de Clientes/Contratos BAT223", "Forçar Extração de Ordem (BAT509)"],
-            "Sistemas Legados": ["Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"]
+            "Sistemas Legados": ["Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"],
+            "Gerenciamento": ["Gerenciamento de Changes"]
         }
         for category_name in sorted(menu_structure.keys()):
             sub_menu = open_menu.addMenu(category_name)
