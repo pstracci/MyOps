@@ -60,8 +60,9 @@ from modules.bat223.bat223_ui import Bat223ToolWidget
 from modules.siebel_relation.siebel_relation_ui import SiebelRelationWidget
 from modules.siebel_bscs.siebel_bscs_ui import SiebelBscsWidget
 from modules.change_manager.change_manager_ui import ChangeManagerWidget
+from modules.password_vault.password_vault_ui import PasswordVaultWidget
+from modules.payment_method.payment_method_ui import PaymentMethodWidget
 from modules.common import themes
-from modules.common import license_validator
 
 # --- Código de Verificação de Update ---
 import requests
@@ -153,11 +154,14 @@ class MainApplicationWindow(QMainWindow):
             "Visualizador de Objetos de Banco": (ObjectViewerWidget, "Visualizador de Objetos"),
             "Monitor Health GFA": (GfaHealthWidget, "Monitor de Health Check - GFA"),
             "Gerenciamento de Changes": (ChangeManagerWidget, "Gerenciamento de Changes"),
+            "Cofre de Senhas": (PasswordVaultWidget, "Cofre de Senhas"),
+            "Alterar Método de Pagamento (Siebel Pós)": (PaymentMethodWidget, "Alterar Método de Pagamento - Siebel Pós"),
         }
         menu_structure = {
             "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)",  "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
             "BATS": ["Agendador de Processamento Massivo (BAT452)", "Forçar Extração de Clientes/Contratos BAT223", "Forçar Extração de Ordem (BAT509)"],
-            "Sistemas Legados": ["Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"],
+            "Sistemas Legados": ["Alterar Método de Pagamento (Siebel Pós)", "Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"],
+            "Segurança": ["Cofre de Senhas"],
             "Gerenciamento": ["Gerenciamento de Changes"]
         }
         for category_name in sorted(menu_structure.keys()):
@@ -236,12 +240,6 @@ if __name__ == '__main__':
     try:
         app = QApplication(sys.argv)
         check_for_updates()
-        is_valid, message = license_validator.check_license()
-        if not is_valid:
-            QMessageBox.critical(None, "Erro de Licença - MyOps", message)
-            logging.error(f"Falha na validação da licença: {message}")
-            sys.exit(1)
-        logging.info(message)
         main_window = MainApplicationWindow()
         main_window.showMaximized()
         sys.exit(app.exec())

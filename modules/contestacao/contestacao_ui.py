@@ -102,11 +102,12 @@ class LogViewerDialog(QWidget):
 class SearchWorker(QThread):
     finished = pyqtSignal(object)
     error = pyqtSignal(str)
-    def __init__(self, db_key, sr, msisdn, start_date, end_date, status):
+    def __init__(self, db_key, sr, msisdn, start_date, end_date, status, invoicenumber=None, customerid=None):
         super().__init__()
         self.db_key, self.sr, self.msisdn, self.start_date, self.end_date, self.status = db_key, sr, msisdn, start_date, end_date, status
+        self.invoicenumber, self.customerid = invoicenumber, customerid
     def run(self):
-        try: self.finished.emit(logic.search_contestacoes(self.db_key, self.sr, self.msisdn, self.start_date, self.end_date, self.status))
+        try: self.finished.emit(logic.search_contestacoes(self.db_key, self.sr, self.msisdn, self.start_date, self.end_date, self.status, self.invoicenumber, self.customerid))
         except Exception as e: self.error.emit(str(e))
 
 class InterfaceSearchWorker(QThread):
@@ -191,6 +192,34 @@ class InvoiceLinesWorker(QThread):
         try:
             results = logic.get_contested_invoice_details(self.db_key, self.invoicenumber)
             self.finished.emit(results)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class AlcadaWorker(QThread):
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    def __init__(self, db_key, sr):
+        super().__init__()
+        self.db_key, self.sr = db_key, sr
+    def run(self):
+        try:
+            results = logic.get_alcada_details(self.db_key, self.sr)
+            self.finished.emit(results)
+        except Exception as e:
+            self.error.emit(str(e))
+
+class AlcadaAuditWorker(QThread):
+    finished = pyqtSignal(object)
+    error = pyqtSignal(str)
+    def __init__(self, db_key, balance_id, request_date):
+        super().__init__()
+        self.db_key, self.balance_id, self.request_date = db_key, balance_id, request_date
+    def run(self):
+        try:
+            results = logic.get_alcada_audit_history(
+                self.db_key, self.balance_id, self.request_date
+            )
+            self.finished.emit({'balance_id': self.balance_id, 'rows': results})
         except Exception as e:
             self.error.emit(str(e))
 
@@ -293,6 +322,13 @@ class ContestacaoViewerWidget(QWidget):
         line1_layout.addWidget(self.sr_input)
         line1_layout.addWidget(QLabel("MSISDN:"))
         line1_layout.addWidget(self.msisdn_input)
+        line1b_layout = QHBoxLayout()
+        self.invoice_input = QLineEdit()
+        self.customer_input = QLineEdit()
+        line1b_layout.addWidget(QLabel("Fatura:"))
+        line1b_layout.addWidget(self.invoice_input)
+        line1b_layout.addWidget(QLabel("CustomerID:"))
+        line1b_layout.addWidget(self.customer_input)
         line2_layout = QHBoxLayout()
         self.status_combo = QComboBox()
         self.status_combo.addItems(["Todos", "Iniciada", "Erro na busca", "Fatura não encontrada", "Conta contábil não cadastrada", "Erro de alçada", "Descartada", "Gerada", "Finalizada", "Itens já contestados", "Erro na validação", "Finalizada Improcedente"])
@@ -318,6 +354,7 @@ class ContestacaoViewerWidget(QWidget):
         line3_layout.addWidget(self.end_date_input)
         line3_layout.addStretch()
         filters_layout.addLayout(line1_layout)
+        filters_layout.addLayout(line1b_layout)
         filters_layout.addLayout(line2_layout)
         filters_layout.addLayout(line3_layout)
         buttons_layout = QHBoxLayout()
@@ -333,11 +370,11 @@ class ContestacaoViewerWidget(QWidget):
         results_group = QGroupBox("Resultados")
         self.results_layout = QStackedLayout(results_group)
         self.results_tree = QTreeWidget()
-        self.results_tree.setHeaderLabels(["Protocolo (SR)", "MSISDN", "Fatura", "Data", "Status"])
+        self.results_tree.setHeaderLabels(["Protocolo (SR)", "MSISDN", "Fatura", "CustomerID", "Data", "Status"])
         header = self.results_tree.header()
         header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        header.setStretchLastSection(False) 
-        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         self.results_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.results_tree.customContextMenuRequested.connect(self._show_results_context_menu)
         self.results_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -364,11 +401,13 @@ class ContestacaoViewerWidget(QWidget):
         copy_sr_action = menu.addAction("Copiar Protocolo (SR)")
         copy_msisdn_action = menu.addAction("Copiar MSISDN")
         copy_invoice_action = menu.addAction("Copiar Fatura")
+        copy_customer_action = menu.addAction("Copiar CustomerID")
         action = menu.exec(self.results_tree.mapToGlobal(pos))
         clipboard = QGuiApplication.clipboard()
         if action == copy_sr_action: clipboard.setText(item.text(0))
         elif action == copy_msisdn_action: clipboard.setText(item.text(1))
         elif action == copy_invoice_action: clipboard.setText(item.text(2))
+        elif action == copy_customer_action: clipboard.setText(item.text(3))
 
     def _perform_search(self):
         logging.info("Botão 'Buscar' clicado. Iniciando SearchWorker...")
@@ -386,11 +425,13 @@ class ContestacaoViewerWidget(QWidget):
             return
         sr = self.sr_input.text().strip() or None
         msisdn = self.msisdn_input.text().strip() or None
+        invoicenumber = self.invoice_input.text().strip() or None
+        customerid = self.customer_input.text().strip() or None
         selected_status = self.status_combo.currentText()
         status = selected_status if selected_status != "Todos" else None
         start_date = self.start_date_input.date().toPyDate() if self.period_check.isChecked() else None
         end_date = self.end_date_input.date().toPyDate() if self.period_check.isChecked() else None
-        self.search_worker = SearchWorker(self.db_combo.currentData(), sr, msisdn, start_date, end_date, status)
+        self.search_worker = SearchWorker(self.db_combo.currentData(), sr, msisdn, start_date, end_date, status, invoicenumber, customerid)
         self.search_worker.finished.connect(self._on_search_finished)
         self.search_worker.error.connect(self._on_worker_error)
         self.search_worker.start()
@@ -408,8 +449,9 @@ class ContestacaoViewerWidget(QWidget):
             item.setText(0, row.get('sr', ''))
             item.setText(1, row.get('msisdn', ''))
             item.setText(2, row.get('invoicenumber', ''))
-            item.setText(3, str(row.get('createdate', '')))
-            item.setText(4, row.get('statusname', ''))
+            item.setText(3, str(row.get('customerid', '') or ''))
+            item.setText(4, str(row.get('createdate', '')))
+            item.setText(5, row.get('statusname', ''))
             item.setData(0, Qt.ItemDataRole.UserRole, row.get('id_'))
     
     def _on_worker_error(self, message):
@@ -556,6 +598,100 @@ class ContestacaoViewerWidget(QWidget):
         adjust_layout.addWidget(self.adjust_summary_label)
         adjust_layout.addWidget(self.adjust_tree)
         self.details_tabs.addTab(adjust_page, "Conta Certa (Ajuste Futuro)")
+
+        alcada_page = QWidget()
+        alcada_layout = QVBoxLayout(alcada_page)
+        self.alcada_user_group = QGroupBox("Usuário que tratou a contestação (análise retroativa)")
+        alcada_user_layout = QGridLayout(self.alcada_user_group)
+        self.alcada_user_labels = {
+            'user_login':            QLabel("<b>Login:</b> Clique nesta aba para carregar."),
+            'user_name':             QLabel("<b>Nome:</b> Clique nesta aba para carregar."),
+            'request_date':          QLabel("<b>Data da Contestação:</b> Clique nesta aba para carregar."),
+            'profile_at_time':       QLabel("<b>Perfil NA ÉPOCA da contestação:</b> Clique nesta aba para carregar."),
+            'profile_current':       QLabel("<b>Perfil ATUAL:</b> Clique nesta aba para carregar."),
+            'profile_source':        QLabel("<b>Fonte do perfil histórico:</b> —"),
+            'profile_change_alert':  QLabel(""),
+        }
+        alcada_user_layout.addWidget(self.alcada_user_labels['user_login'],       0, 0)
+        alcada_user_layout.addWidget(self.alcada_user_labels['user_name'],        0, 1)
+        alcada_user_layout.addWidget(self.alcada_user_labels['request_date'],     1, 0, 1, 2)
+        alcada_user_layout.addWidget(self.alcada_user_labels['profile_at_time'],  2, 0, 1, 2)
+        alcada_user_layout.addWidget(self.alcada_user_labels['profile_current'],  3, 0, 1, 2)
+        alcada_user_layout.addWidget(self.alcada_user_labels['profile_source'],   4, 0, 1, 2)
+        self.alcada_user_labels['profile_at_time'].setStyleSheet("font-size: 11pt;")
+        self.alcada_user_labels['profile_change_alert'].setWordWrap(True)
+        alcada_user_layout.addWidget(self.alcada_user_labels['profile_change_alert'], 5, 0, 1, 2)
+        alcada_layout.addWidget(self.alcada_user_group)
+
+        self.alcada_profile_history_group = QGroupBox(
+            "Histórico de perfis do usuário (scc_user_audit) — filtro indexado por id_"
+        )
+        alcada_profile_history_layout = QVBoxLayout(self.alcada_profile_history_group)
+        self.alcada_profile_history_tree = QTreeWidget()
+        self.alcada_profile_history_tree.setHeaderLabels([
+            "Rev", "Tipo Rev", "ProfileID", "Código", "Nome", "Modificado em", "Marcação"
+        ])
+        alcada_profile_history_layout.addWidget(self.alcada_profile_history_tree)
+        alcada_layout.addWidget(self.alcada_profile_history_group)
+
+        self.alcada_limits_group = QGroupBox(
+            "Alçada do perfil DA ÉPOCA — limites por tipo (SCC_COMPETENCEBYPROFILE)"
+        )
+        alcada_limits_layout = QVBoxLayout(self.alcada_limits_group)
+        self.alcada_limits_summary = QLabel(
+            "<b>Teto por contestação (COMPETENCE_MAX_BY_ANALYSIS):</b> N/A"
+        )
+        self.alcada_contest_compare = QLabel(
+            "<b>Valor contestado / procedente:</b> N/A"
+        )
+        self.alcada_compare_verdict = QLabel("")
+        self.alcada_compare_verdict.setWordWrap(True)
+        self.alcada_limits_tree = QTreeWidget()
+        self.alcada_limits_tree.setHeaderLabels([
+            "Code", "Descrição", "CustomerTypeID", "Valor", "Modificado em", "Status"
+        ])
+        alcada_limits_layout.addWidget(self.alcada_limits_summary)
+        alcada_limits_layout.addWidget(self.alcada_contest_compare)
+        alcada_limits_layout.addWidget(self.alcada_compare_verdict)
+        alcada_limits_layout.addWidget(self.alcada_limits_tree)
+        alcada_layout.addWidget(self.alcada_limits_group)
+
+        alcada_balance_group = QGroupBox("Saldo de Competência (bolsão) vigente no momento da contestação")
+        alcada_balance_layout = QVBoxLayout(alcada_balance_group)
+        self.alcada_tree = QTreeWidget()
+        self.alcada_tree.setHeaderLabels([
+            "Tipo (Code)", "Saldo Atual", "Alçada do Período (Start Balance)",
+            "Início Validade", "Fim Validade", "Status"
+        ])
+        self.alcada_tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.alcada_tree.itemSelectionChanged.connect(self._on_alcada_balance_selected)
+        alcada_balance_layout.addWidget(self.alcada_tree)
+        alcada_layout.addWidget(alcada_balance_group)
+
+        self.alcada_audit_group = QGroupBox("Histórico de alterações do saldo (Auditoria)")
+        alcada_audit_layout = QVBoxLayout(self.alcada_audit_group)
+        self.alcada_audit_hint = QLabel(
+            "Selecione uma linha de saldo acima para visualizar o histórico (filtro por id_, indexado)."
+        )
+        self.alcada_audit_tree = QTreeWidget()
+        self.alcada_audit_tree.setHeaderLabels([
+            "Rev", "Tipo Rev", "Saldo", "Alçada do Período", "Início Validade",
+            "Fim Validade", "Modificado em"
+        ])
+        alcada_audit_layout.addWidget(self.alcada_audit_hint)
+        alcada_audit_layout.addWidget(self.alcada_audit_tree)
+        alcada_layout.addWidget(self.alcada_audit_group)
+
+        self.alcada_observacao_label = QLabel(
+            "<i>Observação: o limite por transação (alçada de ajuste por solicitação) é definido "
+            "pelo código do perfil sistêmico exibido acima. Compare-o com a tabela de alçadas "
+            "vigente para validar a aderência ao limite no momento da contestação.</i>"
+        )
+        self.alcada_observacao_label.setWordWrap(True)
+        alcada_layout.addWidget(self.alcada_observacao_label)
+
+        self.details_tabs.addTab(alcada_page, "Alçada do Usuário")
+
         self.history_tree = QTreeWidget()
         self.history_tree.setHeaderLabels(["Status Anterior", "Status Novo", "Data da Mudança"])
         self.details_tabs.addTab(self.history_tree, "Histórico (Auditoria)")
@@ -624,6 +760,15 @@ class ContestacaoViewerWidget(QWidget):
             self.adjust_worker.finished.connect(self._on_adjust_finished)
             self.adjust_worker.error.connect(self._on_worker_error)
             self.adjust_worker.start()
+        elif tab_name == "Alçada do Usuário":
+            for key, lbl in self.alcada_user_labels.items():
+                lbl.setText(f"<b>{lbl.text().split(':')[0].replace('<b>','')}:</b> Carregando...")
+            self.alcada_tree.clear()
+            QTreeWidgetItem(self.alcada_tree, ["Carregando..."])
+            self.alcada_worker = AlcadaWorker(db_key, self.current_sr)
+            self.alcada_worker.finished.connect(self._on_alcada_finished)
+            self.alcada_worker.error.connect(self._on_worker_error)
+            self.alcada_worker.start()
     
     def _on_contestation_analysis_finished(self, details):
         logging.info("Dados da Análise da Contestação recebidos.")
@@ -675,6 +820,241 @@ class ContestacaoViewerWidget(QWidget):
             QTreeWidgetItem(self.interfaces_tree, [str(interface.get('type_desc')), str(interface.get('desc_status')), str(interface.get('adjustrmcavalue') or interface.get('occcreditvalue') or '0.0'), str(interface.get('senddate', 'N/A')), str(interface.get('errordescription',''))])
         for i in range(self.interfaces_tree.columnCount()): self.interfaces_tree.resizeColumnToContents(i)
 
+    def _on_alcada_finished(self, details):
+        logging.info("Dados de Alçada recebidos.")
+        self.loaded_tabs.add("Alçada do Usuário")
+        user_info = (details or {}).get('user') or {}
+        labels = self.alcada_user_labels
+        if not user_info:
+            labels['user_login'].setText("<b>Login:</b> N/A")
+            labels['user_name'].setText("<b>Nome:</b> N/A")
+            labels['request_date'].setText("<b>Data da Contestação:</b> N/A")
+            labels['profile_at_time'].setText("<b>Perfil NA ÉPOCA da contestação:</b> N/A")
+            labels['profile_current'].setText("<b>Perfil ATUAL:</b> N/A")
+            labels['profile_source'].setText("<b>Fonte do perfil histórico:</b> —")
+            labels['profile_change_alert'].setText("")
+            self.alcada_tree.clear()
+            QTreeWidgetItem(self.alcada_tree, ["Nenhum usuário encontrado para esta contestação."])
+            return
+        labels['user_login'].setText(f"<b>Login:</b> {user_info.get('user_login', 'N/A')}")
+        labels['user_name'].setText(f"<b>Nome:</b> {user_info.get('user_name', 'N/A')}")
+        labels['request_date'].setText(f"<b>Data da Contestação:</b> {user_info.get('request_date', 'N/A')}")
+        prof_code_epoca = user_info.get('profile_code') or 'N/A'
+        prof_name_epoca = user_info.get('profile_name') or 'N/A'
+        prof_id_epoca = user_info.get('profile_id')
+        labels['profile_at_time'].setText(
+            f"<b style='color:#3498db;'>📌 Perfil NA ÉPOCA da contestação:</b> "
+            f"<b>{prof_code_epoca}</b> — {prof_name_epoca} (profileid={prof_id_epoca})"
+        )
+        prof_code_atual = user_info.get('current_profile_code') or 'N/A'
+        prof_name_atual = user_info.get('current_profile_name') or 'N/A'
+        prof_id_atual = user_info.get('current_profile_id')
+        labels['profile_current'].setText(
+            f"<b>Perfil ATUAL:</b> {prof_code_atual} — {prof_name_atual} (profileid={prof_id_atual})"
+        )
+        labels['profile_source'].setText(
+            f"<b>Fonte do perfil histórico:</b> {user_info.get('profile_source', '—')}"
+        )
+        if user_info.get('profile_changed'):
+            labels['profile_change_alert'].setText(
+                "<span style='color:#e67e22;'><b>⚠ Atenção:</b> o perfil do usuário foi alterado "
+                "APÓS a contestação. A análise abaixo usa o perfil vigente no momento da contestação "
+                "(retroativo), e não o perfil atual.</span>"
+            )
+        else:
+            labels['profile_change_alert'].setText(
+                "<span style='color:#27ae60;'>✓ O perfil atual coincide com o perfil vigente na "
+                "data da contestação.</span>"
+            )
+        self.alcada_tree.clear()
+        balances = (details or {}).get('balances') or []
+        if not balances:
+            QTreeWidgetItem(self.alcada_tree, [
+                "Nenhum saldo de competência vigente encontrado no momento da contestação."
+            ])
+        else:
+            def _fmt(v):
+                if v is None: return "N/A"
+                try: return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                except Exception: return str(v)
+            status_map = {1: "Ativo", 0: "Inativo"}
+            for b in balances:
+                item = QTreeWidgetItem(self.alcada_tree, [
+                    str(b.get('balance_code', '')),
+                    _fmt(b.get('balance_atual')),
+                    _fmt(b.get('alcada_periodo')),
+                    str(b.get('startvalidity', '')),
+                    str(b.get('finishvalidity', '')),
+                    status_map.get(b.get('balance_status'), str(b.get('balance_status', ''))),
+                ])
+                item.setData(0, Qt.ItemDataRole.UserRole, b.get('balance_id'))
+        for i in range(self.alcada_tree.columnCount()):
+            self.alcada_tree.resizeColumnToContents(i)
+        self._current_alcada_request_date = (user_info or {}).get('request_date')
+        self.alcada_audit_tree.clear()
+        if balances:
+            self.alcada_tree.setCurrentItem(self.alcada_tree.topLevelItem(0))
+
+        def _fmt_money(v):
+            if v is None: return "N/A"
+            try: return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception: return str(v)
+
+        profile_limits = (details or {}).get('profile_limits') or []
+        self.alcada_limits_tree.clear()
+        teto_contestacao = None
+        status_map = {1: "Ativo", 0: "Inativo"}
+        for limit in profile_limits:
+            code = limit.get('code', '')
+            is_max = (code == 'COMPETENCE_MAX_BY_ANALYSIS')
+            item = QTreeWidgetItem(self.alcada_limits_tree, [
+                str(code),
+                str(limit.get('name_', '')),
+                str(limit.get('customertypeid', '')) if limit.get('customertypeid') is not None else '',
+                _fmt_money(limit.get('value')),
+                str(limit.get('modifieddate', '')),
+                status_map.get(limit.get('status'), str(limit.get('status', ''))),
+            ])
+            if is_max:
+                from PyQt6.QtGui import QFont, QColor
+                font = item.font(0)
+                font.setBold(True)
+                for col in range(self.alcada_limits_tree.columnCount()):
+                    item.setFont(col, font)
+                    item.setBackground(col, QColor(60, 90, 40))
+                teto_contestacao = limit.get('value')
+        for i in range(self.alcada_limits_tree.columnCount()):
+            self.alcada_limits_tree.resizeColumnToContents(i)
+
+        if teto_contestacao is not None:
+            self.alcada_limits_summary.setText(
+                f"<b>Teto por contestação (COMPETENCE_MAX_BY_ANALYSIS):</b> {_fmt_money(teto_contestacao)}"
+            )
+        else:
+            self.alcada_limits_summary.setText(
+                "<b>Teto por contestação (COMPETENCE_MAX_BY_ANALYSIS):</b> não encontrado para este perfil."
+            )
+
+        cv = (details or {}).get('contestation_value') or {}
+        total_contestado = cv.get('total_contestado')
+        total_procedente = cv.get('total_procedente')
+        self.alcada_contest_compare.setText(
+            f"<b>Valor contestado:</b> {_fmt_money(total_contestado)}   "
+            f"<b>Valor procedente:</b> {_fmt_money(total_procedente)}"
+        )
+
+        self.alcada_profile_history_tree.clear()
+        profile_history = (details or {}).get('profile_history') or []
+        epoca_pid = user_info.get('profile_id')
+        request_date_str = user_info.get('request_date') or ''
+        if not profile_history:
+            QTreeWidgetItem(self.alcada_profile_history_tree, [
+                "Nenhuma entrada em scc_user_audit para este usuário."
+            ])
+        else:
+            revtype_lbl = {0: "ADD (0)", 1: "MOD (1)", 2: "DEL (2)"}
+            from PyQt6.QtGui import QFont, QColor
+            for h in profile_history:
+                modified = h.get('modifieddate') or ''
+                marca = ""
+                if modified and request_date_str:
+                    if modified <= request_date_str:
+                        marca = "vigente no momento da contestação" if h.get('profileid') == epoca_pid else "anterior à contestação"
+                    else:
+                        marca = "posterior à contestação"
+                it = QTreeWidgetItem(self.alcada_profile_history_tree, [
+                    str(h.get('rev', '')),
+                    revtype_lbl.get(h.get('revtype'), str(h.get('revtype', ''))),
+                    str(h.get('profileid', '')) if h.get('profileid') is not None else '',
+                    str(h.get('profile_code', '') or ''),
+                    str(h.get('profile_name', '') or ''),
+                    modified,
+                    marca,
+                ])
+                if marca == "vigente no momento da contestação":
+                    font = it.font(0)
+                    font.setBold(True)
+                    for col in range(self.alcada_profile_history_tree.columnCount()):
+                        it.setFont(col, font)
+                        it.setBackground(col, QColor(40, 80, 60))
+                elif marca == "posterior à contestação":
+                    for col in range(self.alcada_profile_history_tree.columnCount()):
+                        it.setForeground(col, QColor(160, 160, 160))
+        for i in range(self.alcada_profile_history_tree.columnCount()):
+            self.alcada_profile_history_tree.resizeColumnToContents(i)
+
+        verdict = ""
+        try:
+            if teto_contestacao is not None and total_procedente is not None and float(total_procedente) > 0:
+                if float(total_procedente) > float(teto_contestacao):
+                    verdict = (
+                        f"<span style='color:#e74c3c;'><b>⚠ Procedente ({_fmt_money(total_procedente)}) "
+                        f"acima do teto do perfil ({_fmt_money(teto_contestacao)}). "
+                        f"Excesso: {_fmt_money(float(total_procedente) - float(teto_contestacao))}.</b></span>"
+                    )
+                else:
+                    verdict = (
+                        f"<span style='color:#2ecc71;'><b>✓ Procedente dentro do teto do perfil.</b></span>"
+                    )
+            elif teto_contestacao is not None and total_contestado is not None:
+                if float(total_contestado or 0) > float(teto_contestacao):
+                    verdict = (
+                        f"<span style='color:#f39c12;'><b>Atenção:</b> valor contestado "
+                        f"({_fmt_money(total_contestado)}) acima do teto do perfil "
+                        f"({_fmt_money(teto_contestacao)}). Verifique o valor procedente.</span>"
+                    )
+        except (TypeError, ValueError):
+            verdict = ""
+        self.alcada_compare_verdict.setText(verdict)
+
+    def _on_alcada_balance_selected(self):
+        selected = self.alcada_tree.selectedItems()
+        if not selected:
+            return
+        balance_id = selected[0].data(0, Qt.ItemDataRole.UserRole)
+        if not balance_id:
+            self.alcada_audit_tree.clear()
+            QTreeWidgetItem(self.alcada_audit_tree, ["Sem id_ de saldo associado."])
+            return
+        self.alcada_audit_hint.setText(
+            f"Auditoria do saldo id_={balance_id} (filtro indexado por id_)."
+        )
+        self.alcada_audit_tree.clear()
+        QTreeWidgetItem(self.alcada_audit_tree, ["Carregando histórico..."])
+        request_date = getattr(self, "_current_alcada_request_date", None)
+        self.alcada_audit_worker = AlcadaAuditWorker(
+            self.db_combo.currentData(), balance_id, request_date
+        )
+        self.alcada_audit_worker.finished.connect(self._on_alcada_audit_finished)
+        self.alcada_audit_worker.error.connect(self._on_worker_error)
+        self.alcada_audit_worker.start()
+
+    def _on_alcada_audit_finished(self, payload):
+        rows = (payload or {}).get('rows') or []
+        self.alcada_audit_tree.clear()
+        if not rows:
+            QTreeWidgetItem(self.alcada_audit_tree, [
+                "Nenhuma revisão de auditoria encontrada para este saldo."
+            ])
+            return
+        revtype_map = {0: "ADD (0)", 1: "MOD (1)", 2: "DEL (2)"}
+        def _fmt(v):
+            if v is None: return "N/A"
+            try: return f"R$ {float(v):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            except Exception: return str(v)
+        for r in rows:
+            QTreeWidgetItem(self.alcada_audit_tree, [
+                str(r.get('rev', '')),
+                revtype_map.get(r.get('revtype'), str(r.get('revtype', ''))),
+                _fmt(r.get('balance')),
+                _fmt(r.get('startbalance')),
+                str(r.get('startvalidity', '')),
+                str(r.get('finishvalidity', '')),
+                str(r.get('modifieddate', '')),
+            ])
+        for i in range(self.alcada_audit_tree.columnCount()):
+            self.alcada_audit_tree.resizeColumnToContents(i)
+
     def _on_adjust_finished(self, details):
         logging.info("Dados de Ajuste recebidos.")
         self.loaded_tabs.add("Conta Certa (Ajuste Futuro)")
@@ -682,7 +1062,10 @@ class ContestacaoViewerWidget(QWidget):
         summary = details.get('adjust_summary', {}); self.adjust_summary_label.setText(f"<b>Status Geral:</b> {summary.get('desc_status', 'N/A')}")
         self.adjust_tree.clear()
         for line in details.get('adjust_lines', []):
-            QTreeWidgetItem(self.adjust_tree, [line.get('description'), str(line.get('value',0)), line.get('callednumbers',''), str(line.get('status'))])
+            raw_status = line.get('status')
+            status_desc = line.get('desc_status') or ''
+            status_display = f"{raw_status} - {status_desc}" if status_desc else str(raw_status)
+            QTreeWidgetItem(self.adjust_tree, [line.get('description'), str(line.get('value',0)), line.get('callednumbers',''), status_display])
         for i in range(self.adjust_tree.columnCount()): self.adjust_tree.resizeColumnToContents(i)
         
     def _on_selection_changed(self):
@@ -727,6 +1110,28 @@ class ContestacaoViewerWidget(QWidget):
         QTreeWidgetItem(self.interfaces_tree, ["Clique nesta aba para carregar..."])
         self.adjust_summary_label.setText("<b>Status Geral:</b> Clique nesta aba para carregar os dados.")
         self.adjust_tree.clear()
+        labels = self.alcada_user_labels
+        labels['user_login'].setText("<b>Login:</b> Clique nesta aba para carregar.")
+        labels['user_name'].setText("<b>Nome:</b> Clique nesta aba para carregar.")
+        labels['request_date'].setText("<b>Data da Contestação:</b> Clique nesta aba para carregar.")
+        labels['profile_at_time'].setText("<b>Perfil NA ÉPOCA da contestação:</b> Clique nesta aba para carregar.")
+        labels['profile_current'].setText("<b>Perfil ATUAL:</b> Clique nesta aba para carregar.")
+        labels['profile_source'].setText("<b>Fonte do perfil histórico:</b> —")
+        labels['profile_change_alert'].setText("")
+        self.alcada_profile_history_tree.clear()
+        self.alcada_tree.clear()
+        QTreeWidgetItem(self.alcada_tree, ["Clique nesta aba para carregar..."])
+        self.alcada_audit_tree.clear()
+        self.alcada_audit_hint.setText(
+            "Selecione uma linha de saldo acima para visualizar o histórico (filtro por id_, indexado)."
+        )
+        self._current_alcada_request_date = None
+        self.alcada_limits_tree.clear()
+        self.alcada_limits_summary.setText(
+            "<b>Teto por contestação (COMPETENCE_MAX_BY_ANALYSIS):</b> Clique nesta aba para carregar."
+        )
+        self.alcada_contest_compare.setText("<b>Valor contestado / procedente:</b> N/A")
+        self.alcada_compare_verdict.setText("")
 
     def _on_details_finished(self, details):
         if not details:
@@ -749,7 +1154,13 @@ class ContestacaoViewerWidget(QWidget):
                 item = QTreeWidgetItem(self.history_tree, [previous_status, current_status, str(entry.get('modifieddate'))])
                 previous_status = current_status
         self.stack.setCurrentWidget(self.details_page)
+        # Bloqueia o sinal currentChanged para não disparar _on_tab_changed(0) duas vezes
+        # (o setCurrentIndex + a chamada explícita criariam dois QThreads concorrentes para
+        # a mesma aba, e a segunda sobrescreveria a referência do primeiro ainda em execução,
+        # causando "QThread destroyed while running" — crash nativo sem traceback).
+        self.details_tabs.blockSignals(True)
         self.details_tabs.setCurrentIndex(0)
+        self.details_tabs.blockSignals(False)
         self._on_tab_changed(0)
 
     def _confirm_and_discard(self):

@@ -72,7 +72,6 @@ pyinstaller ^
     --icon="assets/icone.ico" ^
     --add-data "assets;assets" ^
     --add-data "config.ini;." ^
-    --add-data "license.key;." ^
     %MAIN_SCRIPT%
 if errorlevel 1 (
     echo [ERRO] O PyInstaller encontrou um problema durante a compilacao.
@@ -93,9 +92,8 @@ if errorlevel 1 (
 )
 
 rem COPY para copiar arquivos individuais
-echo       Copiando 'config.ini' e 'license.key'...
+echo       Copiando 'config.ini'...
 copy /Y config.ini "%DEST_DIR%\"
-copy /Y license.key "%DEST_DIR%\"
 echo       Copia finalizada.
 echo.
 

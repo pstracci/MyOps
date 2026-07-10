@@ -20,6 +20,9 @@ Output/
 .vscode/
 .idea/
 
+# Arquivos de tooling do Claude Code (worktrees, estado local)
+.claude/
+
 # ARQUIVOS SENSÍVEIS - NUNCA ENVIE SENHAS!
 config.ini
 license.key
