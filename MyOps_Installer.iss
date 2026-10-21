@@ -2,13 +2,13 @@
 
 [Setup]
 AppName=MyOps
-AppVersion=2.7.0
+AppVersion=3.0.0
 AppPublisher=MyOps Team
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
 DefaultDirName={autopf}\MyOps
 DefaultGroupName=MyOps
 PrivilegesRequired=lowest
-OutputBaseFilename=MyOps_Setup_2.7.0
+OutputBaseFilename=MyOps_Setup_3.0.0
 OutputDir=Output
 Compression=lzma
 SolidCompression=yes
