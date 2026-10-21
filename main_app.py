@@ -62,6 +62,7 @@ from modules.siebel_bscs.siebel_bscs_ui import SiebelBscsWidget
 from modules.change_manager.change_manager_ui import ChangeManagerWidget
 from modules.password_vault.password_vault_ui import PasswordVaultWidget
 from modules.payment_method.payment_method_ui import PaymentMethodWidget
+from modules.protocolo.protocolo_ui import ProtocoloWidget
 from modules.common import themes
 
 # --- Código de Verificação de Update ---
@@ -156,11 +157,12 @@ class MainApplicationWindow(QMainWindow):
             "Gerenciamento de Changes": (ChangeManagerWidget, "Gerenciamento de Changes"),
             "Cofre de Senhas": (PasswordVaultWidget, "Cofre de Senhas"),
             "Alterar Método de Pagamento (Siebel Pós)": (PaymentMethodWidget, "Alterar Método de Pagamento - Siebel Pós"),
+            "Visualizador de Protocolos": (ProtocoloWidget, "Visualizador de Protocolos"),
         }
         menu_structure = {
             "Ferramentas de Banco de Dados": ["Carregador de Arquivos (SQL*Loader)",  "Monitor de Sessões", "Monitor de 'Top SQL' (Agregado)", "Visualizador de Objetos de Banco"],
             "BATS": ["Agendador de Processamento Massivo (BAT452)", "Forçar Extração de Clientes/Contratos BAT223", "Forçar Extração de Ordem (BAT509)"],
-            "Sistemas Legados": ["Alterar Método de Pagamento (Siebel Pós)", "Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho"],
+            "Sistemas Legados": ["Alterar Método de Pagamento (Siebel Pós)", "Comparativo Siebel x BSCSIX", "Consultar Relacionamentos Siebel", "Extrator de Faturas DMS", "Ferramentas PGU", "Monitor Health GFA", "Visualizador de Contestações", "Ferramentas Base Espelho", "Visualizador de Protocolos"],
             "Segurança": ["Cofre de Senhas"],
             "Gerenciamento": ["Gerenciamento de Changes"]
         }

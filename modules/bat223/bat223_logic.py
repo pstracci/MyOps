@@ -16,114 +16,206 @@ def get_config(section):
         return user, password, dsn
     raise ConnectionError(f"Seção '{section}' não encontrada no 'config.ini'.")
 
-# --- ALTERAÇÃO: A função agora recebe 'db_section_name' como argumento ---
-def force_bat223_extraction(environment, msisdn_list, db_section_name):
-    """
-    Executa o processo completo para forçar a extração da BAT223 para uma lista de MSISDNs.
-    """
-    # A lógica para definir tabelas e colunas com base no ambiente (Pós/Pré) permanece
-    if environment == 'pre':
-        temp_table = 'SIEBEL.PM_TMP_ACESSOS_BAT223_PRE'
-        stage_table = 'SIEBEL.PM_TMP_ACESSOS_BAT223_f1' # Usaremos um nome único para evitar conflitos
-        asset_column = 'a.asset_num'
-    elif environment == 'pos':
-        temp_table = 'SIEBEL.PM_TMP_ACESSOS_BAT223_POS'
-        stage_table = 'SIEBEL.PM_TMP_ACESSOS_BAT223_f1'
-        asset_column = 'a.serial_num'
-    else:
-        raise ValueError("Ambiente inválido selecionado.")
+def _batches(items, size=999):
+    """Divide uma lista em lotes de até `size` elementos (limite do IN do Oracle)."""
+    for i in range(0, len(items), size):
+        yield items[i:i + size]
 
-    # A chave do banco de dados agora é fornecida pelo usuário
+def _get_accnt_ids(cursor, cpf_batch):
+    """Resolve CPFs → OWNER_ACCNT_IDs via S_ORG_EXT.NAME (CPF no Siebel TIM).
+    NAME é 2ª coluna dos índices M15/M16/M2 (flag low-cardinality na frente) → index
+    skip scan resolve sem full scan. Sem filtro de flag para não descartar contas."""
+    ph = ', '.join([f':{i + 1}' for i in range(len(cpf_batch))])
+    cursor.execute(
+        f"SELECT ROW_ID FROM SIEBEL.S_ORG_EXT WHERE NAME IN ({ph})",
+        cpf_batch
+    )
+    return [row[0] for row in cursor.fetchall()]
+
+
+def preview_bat223_by_cpf(cpf_list, db_section_name):
+    """
+    Consulta prévia sem alterar dados.
+    Retorna dict: {'movel': N, 'bl': N, 'total': N}
+
+    - MOVEL: assets ROOT (ROW_ID = ROOT_ASSET_ID) com PROD_ID '1-2VL6D' ou '1-1SGIOKK'
+    - BL   : SUB_ACESSO (PAR_ASSET_ID = ROOT_ASSET_ID) com PROD_ID '1-6RE2' ou '1-6REC'
+
+    Usa dois passos para evitar JOIN lento S_ASSET × S_ORG_EXT:
+      1) TAX_IDEN_NUM → ROW_ID em S_ORG_EXT (rápido, poucos CPFs)
+      2) OWNER_ACCNT_ID → S_ASSET (FK indexada)
+    """
     user, password, dsn = get_config(db_section_name)
-    logs = []
+    movel_count = 0
+    bl_count = 0
 
     with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
         with connection.cursor() as cursor:
+            cursor.callTimeout = 30000  # 30 s por statement
+
+            for cpf_batch in _batches(cpf_list):
+                accnt_ids = _get_accnt_ids(cursor, cpf_batch)
+                if not accnt_ids:
+                    continue
+
+                for accnt_batch in _batches(accnt_ids):
+                    ph = ', '.join([f':{i + 1}' for i in range(len(accnt_batch))])
+
+                    cursor.execute(f"""
+                        SELECT COUNT(SA.ROW_ID)
+                        FROM SIEBEL.S_ASSET SA
+                        WHERE SA.OWNER_ACCNT_ID IN ({ph})
+                          AND SA.PROD_ID IN ('1-2VL6D', '1-1SGIOKK')
+                          AND SA.ROW_ID = SA.ROOT_ASSET_ID
+                    """, accnt_batch)
+                    movel_count += cursor.fetchone()[0]
+
+                    cursor.execute(f"""
+                        SELECT COUNT(SA.ROW_ID)
+                        FROM SIEBEL.S_ASSET SA
+                        WHERE SA.OWNER_ACCNT_ID IN ({ph})
+                          AND SA.PROD_ID IN ('1-6RE2', '1-6REC')
+                          AND SA.PAR_ASSET_ID = SA.ROOT_ASSET_ID
+                    """, accnt_batch)
+                    bl_count += cursor.fetchone()[0]
+
+    return {'movel': movel_count, 'bl': bl_count, 'total': movel_count + bl_count}
+
+
+def force_bat223_extraction_by_cpf(cpf_list, db_section_name):
+    """
+    Força a extração BAT223 para uma lista de CPFs, atualizando LAST_UPD dos assets:
+      - MOVEL: ROOT asset (ROW_ID = ROOT_ASSET_ID, PROD_ID '1-2VL6D'/'1-1SGIOKK')
+      - BL   : SUB_ACESSO (PAR_ASSET_ID = ROOT_ASSET_ID, PROD_ID '1-6RE2'/'1-6REC')
+
+    Retorna string de log detalhado.
+    """
+    STAGE_MOVEL = 'SIEBEL.PM_TMP_BAT223_MOVEL_STAGE'
+    STAGE_BL    = 'SIEBEL.PM_TMP_BAT223_BL_STAGE'
+
+    user, password, dsn = get_config(db_section_name)
+    logs = []
+
+    def drop_if_exists(cursor, table):
+        try:
+            cursor.execute(f"DROP TABLE {table}")
+        except oracledb.DatabaseError as e:
+            if 'ORA-00942' not in str(e):
+                raise
+
+    with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
+        with connection.cursor() as cursor:
+            cursor.callTimeout = 60000  # 60 s por statement (UPDATE pode ser mais lento)
             try:
-                # 1. Truncar a tabela temporária
-                logs.append(f"Iniciando TRUNCATE na tabela {temp_table}...")
-                cursor.execute(f"TRUNCATE TABLE {temp_table}")
-                logs.append("Tabela truncada com sucesso.")
+                # ── 0. Resolver CPFs → OWNER_ACCNT_IDs ─────────────────────
+                logs.append(f"Resolvendo {len(cpf_list)} CPF(s) para OWNER_ACCNT_ID...")
+                all_accnt_ids = []
+                for cpf_batch in _batches(cpf_list):
+                    all_accnt_ids.extend(_get_accnt_ids(cursor, cpf_batch))
+                logs.append(f"  → {len(all_accnt_ids)} conta(s) encontrada(s).")
 
-                # 2. Inserir os MSISDNs
-                logs.append(f"Inserindo {len(msisdn_list)} MSISDNs...")
-                data_to_insert = [(msisdn,) for msisdn in msisdn_list]
-                cursor.executemany(f"INSERT INTO {temp_table} (CONTRATOACESSO) VALUES (:1)", data_to_insert)
-                logs.append(f"{cursor.rowcount} registros inseridos com sucesso.")
+                # ── 1. Stage MOVEL ──────────────────────────────────────────
+                logs.append(f"Criando stage MOVEL ({STAGE_MOVEL})...")
+                drop_if_exists(cursor, STAGE_MOVEL)
+                cursor.execute(f"CREATE TABLE {STAGE_MOVEL} (ASSET_ROW_ID VARCHAR2(30))")
+
+                for accnt_batch in _batches(all_accnt_ids):
+                    ph = ', '.join([f':{i + 1}' for i in range(len(accnt_batch))])
+                    cursor.execute(f"""
+                        INSERT INTO {STAGE_MOVEL} (ASSET_ROW_ID)
+                        SELECT SA.ROW_ID
+                        FROM SIEBEL.S_ASSET SA
+                        WHERE SA.OWNER_ACCNT_ID IN ({ph})
+                          AND SA.PROD_ID IN ('1-2VL6D', '1-1SGIOKK')
+                          AND SA.ROW_ID = SA.ROOT_ASSET_ID
+                    """, accnt_batch)
                 connection.commit()
 
-                # 3. Dropar a tabela stage se ela existir
-                try:
-                    logs.append(f"Verificando e dropando tabela stage antiga ({stage_table})...")
-                    cursor.execute(f"DROP TABLE {stage_table}")
-                    logs.append("Tabela stage antiga dropada.")
-                except oracledb.DatabaseError as e:
-                    # ORA-00942: table or view does not exist - esperado se a tabela não existe
-                    if 'ORA-00942' in str(e):
-                        logs.append("Tabela stage não existia, continuando.")
-                    else:
-                        raise # Relança outros erros de drop
+                cursor.execute(f"SELECT COUNT(*) FROM {STAGE_MOVEL}")
+                movel_total = cursor.fetchone()[0]
+                logs.append(f"  → {movel_total} contratos MOVEL identificados.")
 
-                # 4. Criar a tabela stage
-                create_stage_sql = f"""
-                CREATE TABLE {stage_table} AS
-                    SELECT b.row_id,
-                           b.created,
-                           b.last_upd,
-                           b.name AS cpf,
-                           a.ROW_ID row_id_sa,
-                           a.CREATED created_sa,
-                           a.LAST_UPD last_upd_sa,
-                           {asset_column} AS gsm_number,
-                           a.OWNER_ACCNT_ID
-                    FROM SIEBEL.S_ASSET a, SIEBEL.S_ORG_EXT b, {temp_table} c
-                    WHERE a.{asset_column.split('.')[1]} = c.CONTRATOACESSO
-                      AND a.OWNER_ACCNT_ID = b.row_id
-                      AND a.status_cd <> 'Cancelado'
-                """
-                logs.append(f"Criando tabela stage {stage_table}...")
-                cursor.execute(create_stage_sql)
-                logs.append(f"{cursor.rowcount} registros criados na tabela stage.")
+                # ── 2. Stage BL ─────────────────────────────────────────────
+                logs.append(f"Criando stage BL ({STAGE_BL})...")
+                drop_if_exists(cursor, STAGE_BL)
+                cursor.execute(f"CREATE TABLE {STAGE_BL} (ASSET_ROW_ID VARCHAR2(30))")
+
+                for accnt_batch in _batches(all_accnt_ids):
+                    ph = ', '.join([f':{i + 1}' for i in range(len(accnt_batch))])
+                    cursor.execute(f"""
+                        INSERT INTO {STAGE_BL} (ASSET_ROW_ID)
+                        SELECT SA.ROW_ID
+                        FROM SIEBEL.S_ASSET SA
+                        WHERE SA.OWNER_ACCNT_ID IN ({ph})
+                          AND SA.PROD_ID IN ('1-6RE2', '1-6REC')
+                          AND SA.PAR_ASSET_ID = SA.ROOT_ASSET_ID
+                    """, accnt_batch)
                 connection.commit()
 
-                # 5. Executar o bloco anônimo
-                plsql_block = f"""
-                DECLARE
-                    v_count NUMBER := 0;
-                BEGIN
-                    FOR rec IN (SELECT * FROM {stage_table})
-                    LOOP
-                        UPDATE SIEBEL.S_ORG_EXT
-                           SET LAST_UPD = SYSDATE, LAST_UPD_BY = '1-0'
-                         WHERE ROW_ID = rec.row_id;
+                cursor.execute(f"SELECT COUNT(*) FROM {STAGE_BL}")
+                bl_total = cursor.fetchone()[0]
+                logs.append(f"  → {bl_total} contratos BL identificados.")
 
-                        UPDATE SIEBEL.S_ASSET
-                           SET LAST_UPD = SYSDATE, LAST_UPD_BY = '1-0'
-                         WHERE ROW_ID = rec.row_id_sa;
+                # ── 3. UPDATE MOVEL ─────────────────────────────────────────
+                logs.append(f"Atualizando LAST_UPD em {movel_total} ROOT MOVEL (S_ASSET)...")
+                cursor.execute(f"""
+                    DECLARE
+                        v_count NUMBER := 0;
+                    BEGIN
+                        FOR rec IN (SELECT ASSET_ROW_ID FROM {STAGE_MOVEL}) LOOP
+                            UPDATE SIEBEL.S_ASSET
+                               SET LAST_UPD    = SYSDATE,
+                                   LAST_UPD_BY = '1-0'
+                             WHERE ROW_ID = rec.ASSET_ROW_ID;
+                            v_count := v_count + 1;
+                            IF v_count >= 1000 THEN
+                                COMMIT;
+                                v_count := 0;
+                            END IF;
+                        END LOOP;
+                        COMMIT;
+                    END;
+                """)
+                logs.append("  → UPDATE MOVEL concluído.")
 
-                        v_count := v_count + 1;
-                        IF (v_count >= 1000)
-                        THEN
-                            COMMIT;
-                            v_count := 0;
-                        END IF;
-                    END LOOP;
-                    COMMIT;
-                END;
-                """
-                logs.append("Executando bloco anônimo para atualizar S_ASSET e S_ORG_EXT...")
-                cursor.execute(plsql_block)
-                logs.append("Bloco anônimo executado com sucesso.")
+                # ── 4. UPDATE BL ────────────────────────────────────────────
+                logs.append(f"Atualizando LAST_UPD em {bl_total} SUB_ACESSO BL (S_ASSET)...")
+                cursor.execute(f"""
+                    DECLARE
+                        v_count NUMBER := 0;
+                    BEGIN
+                        FOR rec IN (SELECT ASSET_ROW_ID FROM {STAGE_BL}) LOOP
+                            UPDATE SIEBEL.S_ASSET
+                               SET LAST_UPD    = SYSDATE,
+                                   LAST_UPD_BY = '1-0'
+                             WHERE ROW_ID = rec.ASSET_ROW_ID;
+                            v_count := v_count + 1;
+                            IF v_count >= 1000 THEN
+                                COMMIT;
+                                v_count := 0;
+                            END IF;
+                        END LOOP;
+                        COMMIT;
+                    END;
+                """)
+                logs.append("  → UPDATE BL concluído.")
 
-                # 6. Limpeza final
-                logs.append(f"Dropando tabela stage final ({stage_table})...")
-                cursor.execute(f"DROP TABLE {stage_table}")
-                logs.append("Limpeza concluída.")
+                # ── 5. Limpeza ───────────────────────────────────────────────
+                drop_if_exists(cursor, STAGE_MOVEL)
+                drop_if_exists(cursor, STAGE_BL)
                 connection.commit()
+                logs.append("Tabelas stage removidas.")
+                logs.append(
+                    f"\nResumo: {movel_total} MOVEL + {bl_total} BL = "
+                    f"{movel_total + bl_total} contratos marcados para extração."
+                )
 
             except Exception as e:
-                logs.append(f"ERRO: Ocorreu um erro durante o processo: {e}")
-                connection.rollback()
+                logs.append(f"\nERRO: {e}")
+                try:
+                    connection.rollback()
+                except Exception:
+                    pass
                 raise e
 
     return "\n".join(logs)

@@ -6,18 +6,18 @@ set PROJECT_NAME=MyOps
 set MAIN_SCRIPT=main_app.py
 set REQUIREMENTS_FILE=requirements.txt
 set INSTALLER_SCRIPT=MyOps_Installer.iss
+set ISCC="C:\Program Files (x86)\Inno Setup 6\iscc.exe"
 
 echo =========================================================
-echo       INICIANDO ETAPA 1: PREPARACAO E BUILD
+echo       INICIANDO BUILD COMPLETO DO %PROJECT_NAME%
 echo =========================================================
 echo.
 
-REM --- Passo 1: Leitura da versão ---
-echo [1/7] Lendo a versao do arquivo __version__.py...
+REM --- Passo 1: Leitura da vers?o ---
+echo [1/8] Lendo a versao do arquivo __version__.py...
 for /f "tokens=2 delims==" %%i in (__version__.py) do (
     set APP_VERSION=%%i
 )
-rem Limpa espacos, aspas duplas e aspas simples da variavel
 set APP_VERSION=%APP_VERSION: =%
 set APP_VERSION=%APP_VERSION:"=%
 set APP_VERSION=%APP_VERSION:'=%
@@ -30,7 +30,7 @@ echo       Versao da aplicacao: %APP_VERSION%
 echo.
 
 REM --- Passo 2: Limpeza ---
-echo [2/7] Limpando builds anteriores...
+echo [2/8] Limpando builds anteriores...
 if exist build rmdir /s /q build
 if exist dist rmdir /s /q dist
 if exist Output rmdir /s /q Output
@@ -40,12 +40,12 @@ echo       Limpeza concluida.
 echo.
 
 REM --- Passo 3: Ambiente Virtual ---
-echo [3/7] Configurando o ambiente virtual (venv)...
+echo [3/8] Configurando o ambiente virtual (venv)...
 if not exist venv (
     echo       Criando novo ambiente virtual...
     py -m venv venv
     if errorlevel 1 (
-        echo [ERRO] Falha ao criar o ambiente virtual. Verifique se o Python esta instalado corretamente.
+        echo [ERRO] Falha ao criar o ambiente virtual.
         goto:error
     )
 )
@@ -54,16 +54,16 @@ echo       Ambiente virtual ativado.
 echo.
 
 REM --- Passo 4: Dependencias ---
-echo [4/7] Instalando dependencias do %REQUIREMENTS_FILE%...
+echo [4/8] Instalando dependencias do %REQUIREMENTS_FILE%...
 pip install -r %REQUIREMENTS_FILE%
 if errorlevel 1 (
-    echo [ERRO] Falha ao instalar as dependencias. Verifique o arquivo %REQUIREMENTS_FILE%.
+    echo [ERRO] Falha ao instalar as dependencias.
     goto:error
 )
 echo.
 
 REM --- Passo 5: Compilando com PyInstaller ---
-echo [5/7] Compilando a aplicacao com PyInstaller...
+echo [5/8] Compilando a aplicacao com PyInstaller...
 pyinstaller ^
     --name %PROJECT_NAME% ^
     --windowed ^
@@ -71,7 +71,6 @@ pyinstaller ^
     --clean ^
     --icon="assets/icone.ico" ^
     --add-data "assets;assets" ^
-    --add-data "config.ini;." ^
     %MAIN_SCRIPT%
 if errorlevel 1 (
     echo [ERRO] O PyInstaller encontrou um problema durante a compilacao.
@@ -79,11 +78,10 @@ if errorlevel 1 (
 )
 echo.
 
-REM --- Passo 5.5: Forcando a Copia de Arquivos Essenciais para o Diretorio Final ---
-echo [6/7] Garantindo a presenca de arquivos essenciais no diretorio de saida...
+REM --- Passo 5.5: Copiando arquivos essenciais ---
+echo [6/8] Garantindo a presenca de arquivos essenciais no diretorio de saida...
 set DEST_DIR=dist\%PROJECT_NAME%
 
-rem XCOPY para copiar a pasta assets e todo o seu conteudo
 echo       Copiando a pasta 'assets'...
 xcopy assets "%DEST_DIR%\assets\" /E /I /Y
 if errorlevel 1 (
@@ -91,14 +89,25 @@ if errorlevel 1 (
     goto:error
 )
 
-rem COPY para copiar arquivos individuais
+REM config.ini: prioriza a versao instalada (que tem as conexoes do usuario).
+REM Se ja existe uma instalacao com config.ini, usa ela como template para o
+REM novo pacote. Caso contrario, usa o config.ini de desenvolvimento.
+REM O Inno Setup ainda aplica onlyifdoesntexist como segunda camada de protecao.
 echo       Copiando 'config.ini'...
-copy /Y config.ini "%DEST_DIR%\"
+set INSTALLED_CONFIG=%LOCALAPPDATA%\Programs\MyOps\config.ini
+if exist "%INSTALLED_CONFIG%" (
+    echo       [INFO] config.ini do usuario encontrado em %INSTALLED_CONFIG%
+    echo       [INFO] Usando versao instalada para preservar conexoes.
+    copy /Y "%INSTALLED_CONFIG%" "%DEST_DIR%\"
+) else (
+    echo       [INFO] Nenhuma instalacao anterior encontrada. Usando config.ini de desenvolvimento.
+    copy /Y config.ini "%DEST_DIR%\"
+)
 echo       Copia finalizada.
 echo.
 
 REM --- Passo 6: Gerando o script do Inno Setup ---
-echo [7/7] Gerando o script do instalador (%INSTALLER_SCRIPT%)...
+echo [7/8] Gerando o script do instalador (%INSTALLER_SCRIPT%)...
 (
     echo ; Script para o Inno Setup do MyOps (gerado automaticamente^)
     echo.
@@ -106,6 +115,7 @@ echo [7/7] Gerando o script do instalador (%INSTALLER_SCRIPT%)...
     echo AppName=%PROJECT_NAME%
     echo AppVersion=%APP_VERSION%
     echo AppPublisher=MyOps Team
+    echo AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
     echo DefaultDirName={autopf}\%PROJECT_NAME%
     echo DefaultGroupName=%PROJECT_NAME%
     echo PrivilegesRequired=lowest
@@ -120,15 +130,18 @@ echo [7/7] Gerando o script do instalador (%INSTALLER_SCRIPT%)...
     echo Name: "brazilianportuguese"; MessagesFile: "compiler:Languages\BrazilianPortuguese.isl"
     echo.
     echo [Tasks]
-    echo Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+    echo Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
     echo.
     echo [Files]
-    echo Source: "%DEST_DIR%\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "myops_debug.log"
+    echo ; Todos os arquivos do app, exceto log e config (sempre atualizados^)
+    echo Source: "%DEST_DIR%\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "myops_debug.log,config.ini"
+    echo ; config.ini: apenas instalado se nao existir (preserva conexoes do usuario^)
+    echo Source: "%DEST_DIR%\config.ini"; DestDir: "{app}"; Flags: onlyifdoesntexist
     echo.
     echo [Icons]
-    echo Name: "{group}\%PROJECT_NAME%"; Filename: "{app}\%PROJECT_NAME%.exe"
+    echo Name: "{group}\%PROJECT_NAME%"; Filename: "{app}\%PROJECT_NAME%.exe"; WorkingDir: "{app}"
     echo Name: "{group}\{cm:UninstallProgram,%PROJECT_NAME%}"; Filename: "{uninstallexe}"
-    echo Name: "{autodesktop}\%PROJECT_NAME%"; Filename: "{app}\%PROJECT_NAME%.exe"; Tasks: desktopicon
+    echo Name: "{autodesktop}\%PROJECT_NAME%"; Filename: "{app}\%PROJECT_NAME%.exe"; WorkingDir: "{app}"; Tasks: desktopicon
     echo.
     echo [Run]
     echo Filename: "{app}\%PROJECT_NAME%.exe"; Description: "{cm:LaunchProgram,%PROJECT_NAME%}"; Flags: nowait postinstall shellexec
@@ -136,23 +149,42 @@ echo [7/7] Gerando o script do instalador (%INSTALLER_SCRIPT%)...
 echo       Script do instalador gerado com sucesso.
 echo.
 
+REM --- Passo 7: Compilando o instalador e instalando ---
+echo [8/8] Compilando instalador com Inno Setup e instalando...
+%ISCC% %INSTALLER_SCRIPT%
+if errorlevel 1 (
+    echo [ERRO] O Inno Setup falhou ao compilar o instalador.
+    goto:error
+)
+echo       Instalador compilado. Instalando silenciosamente...
+for /f "delims=" %%f in ('dir /b Output\%PROJECT_NAME%_Setup_*.exe 2^>nul') do set SETUP_FILE=Output\%%f
+if not defined SETUP_FILE (
+    echo [ERRO] Arquivo de instalador nao encontrado em Output\.
+    goto:error
+)
+"%SETUP_FILE%" /VERYSILENT /NORESTART /TASKS="desktopicon"
+if errorlevel 1 (
+    echo [ERRO] A instalacao falhou.
+    goto:error
+)
+echo       Instalacao concluida.
+echo.
+
 goto:success
 
 :success
 echo =========================================================
-echo   ETAPA 1 (PREPARACAO) CONCLUIDA COM SUCESSO!
-echo.
-echo   - A pasta '%DEST_DIR%' contem os arquivos da aplicacao.
-echo   - O script '%INSTALLER_SCRIPT%' foi gerado com a versao correta.
-echo.
-echo   >> PROXIMO PASSO: Verifique a pasta e execute 'compile_installer.bat'.
+echo   BUILD E INSTALACAO CONCLUIDOS COM SUCESSO!
+echo   Versao: %APP_VERSION%
+echo   O atalho existente continua funcionando.
+echo   Dados de conexoes do usuario foram preservados.
 echo =========================================================
 goto:end
 
 :error
 echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 echo   O PROCESSO DE BUILD FALHOU.
-echo   Verifique a mensagem de erro acima para mais detalhes.
+echo   Verifique a mensagem de erro acima.
 echo XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 :end

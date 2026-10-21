@@ -211,6 +211,31 @@ def get_adjust_details(db_key, sr):
                             status_int = None
                         line['desc_status'] = line_status_map.get(status_int, '')
                     adjust_details['adjust_lines'] = adjust_lines
+
+                    # Histórico completo do envio do ajuste (Conta Certa) a partir da
+                    # tabela de auditoria. O acesso é feito SEMPRE por id_ (indexado) por
+                    # questão de performance. Ordenado cronologicamente para expor o fluxo
+                    # inteiro (createdate -> cada modifieddate/status), e não apenas o último.
+                    query_adjust_history = (
+                        "SELECT rev, revtype, "
+                        "TO_CHAR(createdate, 'YYYY-MM-DD HH24:MI:SS') as createdate, "
+                        "TO_CHAR(modifieddate, 'YYYY-MM-DD HH24:MI:SS') as modifieddate, "
+                        "status, "
+                        "DECODE (status, 1, 'Processado', 2, 'Em processamento', "
+                        "3, 'Em processamento', 4, 'Erro no processamento', "
+                        "5, 'Erro de envio', 6, 'Erro de alçada', 7, 'Solicitação cancelada', "
+                        "8, 'Processamento cancelado', 9, 'Cancelado usuário', "
+                        "10, 'Não elegível', 0, 'Não enviado') as desc_status, "
+                        "protocolnumber, userid "
+                        "FROM scc_invoiceadjust_audit "
+                        "WHERE id_ = :id "
+                        "ORDER BY modifieddate, rev"
+                    )
+                    cursor.execute(query_adjust_history, id=adjust_id)
+                    history_columns = [desc[0].lower() for desc in cursor.description]
+                    adjust_details['adjust_history'] = [
+                        dict(zip(history_columns, row)) for row in cursor.fetchall()
+                    ]
             return adjust_details
     except oracledb.DatabaseError as e:
         raise Exception(f"Erro ao buscar detalhes do ajuste: {e.args[0].message}")

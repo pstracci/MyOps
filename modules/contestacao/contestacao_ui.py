@@ -597,6 +597,16 @@ class ContestacaoViewerWidget(QWidget):
         self.adjust_tree.setHeaderLabels(["Descrição", "Valor Corrigido", "Números Chamados", "Status"])
         adjust_layout.addWidget(self.adjust_summary_label)
         adjust_layout.addWidget(self.adjust_tree)
+        self.adjust_history_group = QGroupBox(
+            "Histórico do envio do ajuste (scc_invoiceadjust_audit) — filtro indexado por id_"
+        )
+        adjust_history_layout = QVBoxLayout(self.adjust_history_group)
+        self.adjust_history_tree = QTreeWidget()
+        self.adjust_history_tree.setHeaderLabels([
+            "Rev", "Tipo Rev", "Criado em", "Modificado em", "Status", "Protocolo", "UserID"
+        ])
+        adjust_history_layout.addWidget(self.adjust_history_tree)
+        adjust_layout.addWidget(self.adjust_history_group)
         self.details_tabs.addTab(adjust_page, "Conta Certa (Ajuste Futuro)")
 
         alcada_page = QWidget()
@@ -1067,7 +1077,30 @@ class ContestacaoViewerWidget(QWidget):
             status_display = f"{raw_status} - {status_desc}" if status_desc else str(raw_status)
             QTreeWidgetItem(self.adjust_tree, [line.get('description'), str(line.get('value',0)), line.get('callednumbers',''), status_display])
         for i in range(self.adjust_tree.columnCount()): self.adjust_tree.resizeColumnToContents(i)
-        
+
+        # Histórico completo do envio do ajuste (não apenas o último registro).
+        revtype_map = {0: "ADD (0)", 1: "MOD (1)", 2: "DEL (2)"}
+        self.adjust_history_tree.clear()
+        history = details.get('adjust_history', [])
+        if not history:
+            QTreeWidgetItem(self.adjust_history_tree, ["Nenhum histórico encontrado."])
+        else:
+            for h in history:
+                raw_status = h.get('status')
+                status_desc = h.get('desc_status') or ''
+                status_display = f"{raw_status} - {status_desc}" if status_desc else str(raw_status)
+                QTreeWidgetItem(self.adjust_history_tree, [
+                    str(h.get('rev', '')),
+                    revtype_map.get(h.get('revtype'), str(h.get('revtype', ''))),
+                    str(h.get('createdate') or ''),
+                    str(h.get('modifieddate') or ''),
+                    status_display,
+                    str(h.get('protocolnumber') or ''),
+                    str(h.get('userid') or ''),
+                ])
+        for i in range(self.adjust_history_tree.columnCount()):
+            self.adjust_history_tree.resizeColumnToContents(i)
+
     def _on_selection_changed(self):
         is_selected = bool(self.results_tree.selectedItems())
         self.details_button.setEnabled(is_selected)
@@ -1110,6 +1143,8 @@ class ContestacaoViewerWidget(QWidget):
         QTreeWidgetItem(self.interfaces_tree, ["Clique nesta aba para carregar..."])
         self.adjust_summary_label.setText("<b>Status Geral:</b> Clique nesta aba para carregar os dados.")
         self.adjust_tree.clear()
+        self.adjust_history_tree.clear()
+        QTreeWidgetItem(self.adjust_history_tree, ["Clique nesta aba para carregar..."])
         labels = self.alcada_user_labels
         labels['user_login'].setText("<b>Login:</b> Clique nesta aba para carregar.")
         labels['user_name'].setText("<b>Nome:</b> Clique nesta aba para carregar.")

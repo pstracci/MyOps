@@ -4,6 +4,66 @@ import os
 import tempfile
 import time
 import sys
+import configparser
+import oracledb
+from modules.common import security
+
+
+def get_config(section):
+    """Lê uma seção específica do arquivo config.ini e descriptografa a senha."""
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    if section in config:
+        user = config[section].get('user', '')
+        encrypted_password = config[section].get('password', '')
+        dsn = config[section].get('dsn', config[section].get('url', ''))
+        password = security.decrypt_password(encrypted_password)
+        return user, password, dsn
+    raise ConnectionError(f"Seção '{section}' não encontrada no 'config.ini'.")
+
+
+def get_all_db_connections():
+    config = configparser.ConfigParser()
+    config.read('config.ini')
+    db_connections = {}
+    for section in config.sections():
+        if section.startswith('database_'):
+            db_connections[section] = section.replace('database_', '').replace('_', ' ').title()
+    return db_connections
+
+
+def release_pdv_for_update(db_key, pdv_code):
+    """
+    Executa SGFA001.PRC_FIX_LOJA para o PDV informado, liberando-o para
+    atualização, e retorna a saída do DBMS_OUTPUT gerada pela procedure.
+    """
+    pdv_code = (pdv_code or "").strip()
+    if not pdv_code:
+        raise ValueError("Informe o código do PDV.")
+
+    user, password, dsn = get_config(db_key)
+    try:
+        with oracledb.connect(user=user, password=password, dsn=dsn) as connection:
+            with connection.cursor() as cursor:
+                cursor.callproc("dbms_output.enable")
+                cursor.callproc("SGFA001.PRC_FIX_LOJA", [pdv_code])
+                connection.commit()
+
+                lines_var = cursor.arrayvar(str, 100)
+                num_lines_var = cursor.var(int, 100)
+                dbms_output_lines = []
+                while True:
+                    cursor.callproc("dbms_output.get_lines", [lines_var, num_lines_var])
+                    num_retrieved = num_lines_var.getvalue()
+                    lines = lines_var.getvalue()[:num_retrieved]
+                    for line in lines:
+                        if line:
+                            dbms_output_lines.append(line.strip())
+                    if num_retrieved < 100:
+                        break
+                return "\n".join(dbms_output_lines)
+    except oracledb.DatabaseError as e:
+        raise Exception(f"Erro no banco de dados ao liberar o PDV: {e.args[0].message}")
 
 def run_health_check_with_temp_script(host_alias):
     """
